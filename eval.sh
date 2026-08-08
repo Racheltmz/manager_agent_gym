@@ -1,0 +1,1 @@
+uv run python diagnostics/analyze_diagnostic_runs.py

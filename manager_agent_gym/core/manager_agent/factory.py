@@ -73,7 +73,9 @@ def create_manager_agent(
         "random": lambda: RandomManagerAgentV2(
             preferences=preferences, model_name=resolved_model, seed=0
         ),
-        "assign_all": lambda: OneShotDelegateManagerAgent(preferences=preferences),
+        "assign_all": lambda: OneShotDelegateManagerAgent(
+            preferences=preferences, model_name=resolved_model
+        ),
     }
 
     if resolved_mode not in creators:

@@ -362,6 +362,7 @@ class ValidationEngine:
                     max_score=float(rubric.max_score),
                     description=rubric.description or "",
                     frequency=ValidationFrequency.MANUAL,
+                    model=rubric.llm_model,
                     seed=self.seed,
                 )
                 vr = await temp_rule.validate(context)
