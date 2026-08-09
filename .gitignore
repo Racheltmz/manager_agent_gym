@@ -47,4 +47,4 @@ simulation_outputs*/
 analysis_outputs*/
 examples/analysis/*
 
-diagnostics/*
+diagnostics/**/*.json
