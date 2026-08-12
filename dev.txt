@@ -8,3 +8,5 @@ echo 'uv run python examples/run_examples.py \
   --model-name gpt-4o-mini \
   --output-dir diagnostics/outputs/cot \
   --seed 42'
+
+# simulation_outputs folder is the default output_dir if output_dir is not specified

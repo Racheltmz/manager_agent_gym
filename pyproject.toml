@@ -21,6 +21,7 @@ dependencies = [
     "tqdm>=4.66.5",
     "typer>=0.12.5",
     "questionary>=2.0.1",
+    "gradio>=6.15.1",
 ]
 
 [dependency-groups]

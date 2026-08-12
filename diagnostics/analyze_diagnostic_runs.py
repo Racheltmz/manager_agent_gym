@@ -30,6 +30,7 @@ Usage (after running diagnostics/run_diagnostic_suite.sh):
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from dataclasses import dataclass, field, asdict
@@ -40,8 +41,8 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from examples.scenarios import SCENARIOS  # noqa: E402
 
-WORKFLOWS = ["legal_m_and_a", "marketing_campaign", "tech_company_acquisition"]
-MODES = ["cot", "random", "assign_all"]
+ALL_WORKFLOWS = ["legal_m_and_a", "marketing_campaign", "tech_company_acquisition"]
+ALL_MODES = ["cot", "random", "assign_all"]
 OUT_ROOT = REPO_ROOT / "diagnostics" / "outputs"
 
 # How many timesteps after joining an agent must receive its first
@@ -97,10 +98,13 @@ def get_team_join_events(workflow_name: str) -> list[tuple[int, str, str]]:
     return events
 
 
-def find_latest_run_dir(workflow_name: str, manager_mode: str) -> Path | None:
+def find_run_dir(workflow_name: str, manager_mode: str, seed: int | None) -> Path | None:
     scenario_dir = OUT_ROOT / manager_mode / workflow_name
     if not scenario_dir.is_dir():
         return None
+    if seed is not None:
+        run_dir = scenario_dir / f"run_seed_{seed}"
+        return run_dir if run_dir.is_dir() else None
     run_dirs = sorted(
         [p for p in scenario_dir.iterdir() if p.is_dir() and p.name.startswith("run_")],
         key=lambda p: p.stat().st_mtime,
@@ -254,12 +258,12 @@ def check_capabilities_visible_at_join(
     return None
 
 
-def analyze_run(workflow_name: str, manager_mode: str) -> RunAnalysis:
+def analyze_run(workflow_name: str, manager_mode: str, seed: int | None) -> RunAnalysis:
     analysis = RunAnalysis(workflow=workflow_name, manager_mode=manager_mode, run_dir=None,
                             weighted_preference_total=None, total_tasks=None,
                             completed_tasks=None, failed_tasks=None)
 
-    run_dir = find_latest_run_dir(workflow_name, manager_mode)
+    run_dir = find_run_dir(workflow_name, manager_mode, seed)
     if run_dir is None:
         analysis.notes.append("no run directory found — run diagnostics/run_diagnostic_suite.sh first")
         return analysis
@@ -364,23 +368,55 @@ def print_summary(results: list[RunAnalysis]) -> None:
             print(f"    note: {note}")
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--workflow",
+        "--workflows",
+        dest="workflows",
+        nargs="+",
+        choices=ALL_WORKFLOWS,
+        default=ALL_WORKFLOWS,
+        help="Workflow(s) to analyze (default: all)",
+    )
+    parser.add_argument(
+        "--mode",
+        "--modes",
+        dest="modes",
+        nargs="+",
+        choices=ALL_MODES,
+        default=ALL_MODES,
+        help="Manager mode(s) to analyze (default: all)",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Run seed to analyze, matching run_seed_<seed> (default: latest run dir found)",
+    )
+    return parser.parse_args()
+
+
+def _to_serializable(r: RunAnalysis) -> dict:
+    return {**asdict(r), "agent_join_analyses": [asdict(a) for a in r.agent_join_analyses]}
+
+
 def main() -> None:
+    args = parse_args()
     results: list[RunAnalysis] = []
-    for mode in MODES:
-        for wf in WORKFLOWS:
-            results.append(analyze_run(wf, mode))
+    for mode in args.modes:
+        for wf in args.workflows:
+            results.append(analyze_run(wf, mode, args.seed))
 
     print_summary(results)
 
-    out_path = OUT_ROOT / "summary.json"
-    OUT_ROOT.mkdir(parents=True, exist_ok=True)
-    serializable = [
-        {**asdict(r), "agent_join_analyses": [asdict(a) for a in r.agent_join_analyses]}
-        for r in results
-    ]
-    with open(out_path, "w") as f:
-        json.dump(serializable, f, indent=2, default=str)
-    print(f"\nWrote full structured results to {out_path}")
+    for r in results:
+        if r.run_dir is None:
+            continue
+        out_path = Path(r.run_dir) / "summary.json"
+        with open(out_path, "w") as f:
+            json.dump(_to_serializable(r), f, indent=2, default=str)
+        print(f"\nWrote structured results to {out_path}")
 
 
 if __name__ == "__main__":
