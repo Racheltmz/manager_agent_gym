@@ -84,15 +84,32 @@ class RunAnalysis:
 
 
 def get_team_join_events(workflow_name: str) -> list[tuple[int, str, str]]:
-    """Returns [(join_timestep, agent_id, reason), ...] sorted by timestep."""
+    """Returns [(join_timestep, agent_id, reason), ...] sorted by timestep,
+    one entry per agent_id (its first-ever "add").
+
+    Some scenarios' create_team_timeline() re-adds an agent_id that's
+    already on the roster (e.g. legal_m_and_a's senior_mna_associate joins
+    at t0 *and* again at t35, per the "paper pattern" churn-milestone
+    comment in team.py) to represent expanded scope, not a genuinely new
+    team member. Counting that second event as a "join" double-counts an
+    existing agent as new and, downstream, get_assignment_timesteps()'s
+    flat agent_id->first-assignment lookup makes the re-join inherit the
+    original join's (much earlier) assignment — producing nonsensical
+    negative lag / false "assigned" results. Only the first add per
+    agent_id is treated as a join event here; later re-adds are dropped.
+    """
     spec = SCENARIOS[workflow_name]
     timeline = spec.create_team_timeline()
     events: list[tuple[int, str, str]] = []
-    for t, changes in timeline.items():
+    seen_agent_ids: set[str] = set()
+    for t, changes in sorted(timeline.items()):
         for action, payload, reason in changes:
             if action != "add":
                 continue
             agent_id = payload.agent_id if hasattr(payload, "agent_id") else str(payload)
+            if agent_id in seen_agent_ids:
+                continue
+            seen_agent_ids.add(agent_id)
             events.append((t, agent_id, reason))
     events.sort(key=lambda e: e[0])
     return events

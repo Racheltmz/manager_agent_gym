@@ -44,6 +44,11 @@ fi
 for mode in "${MODES[@]}"; do
   for wf in "${WORKFLOWS[@]}"; do
     echo "==== workflow=$wf manager_mode=$mode model=$MODEL_NAME seed=$SEED ===="
+    RUN_DIR="$OUT_ROOT/$mode/$wf/run_seed_$SEED"
+    if [[ -d "$RUN_DIR" ]]; then
+      echo "Clearing existing run directory: $RUN_DIR"
+      rm -rf "$RUN_DIR"
+    fi
     LOG_FILE="$OUT_ROOT/logs/${wf}__${mode}.log"
     python examples/run_examples.py \
       --workflow_name "$wf" \

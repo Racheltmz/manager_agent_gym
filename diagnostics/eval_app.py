@@ -377,13 +377,23 @@ def make_nonstationarity_agg(
     failed_df: pd.DataFrame,
     summaries_df: pd.DataFrame,
     workflow: str | None,
+    mid_episode_only: bool = False,
 ) -> pd.DataFrame:
     """Per-manager-mode aggregate of the non-stationarity signals, summed/
-    averaged across every run_seed_* of the given workflow."""
+    averaged across every run_seed_* of the given workflow.
+
+    create_team_timeline() encodes the initial team as "add" events at
+    timestep 0 alongside genuine mid-episode joins, so agent_join_analyses
+    (and this aggregate) includes both by default. Set mid_episode_only=True
+    to restrict to agents with join_timestep > 0 — i.e. actual team churn,
+    not baseline utilization of the starting roster — which is the
+    apples-to-apples non-stationarity comparison."""
     if joins_df is None or joins_df.empty or not workflow:
         return pd.DataFrame(columns=NONSTATIONARITY_AGG_COLUMNS)
 
     j = joins_df[joins_df["workflow"] == workflow]
+    if mid_episode_only:
+        j = j[j["join_timestep"] > 0]
     f = (
         failed_df[failed_df["workflow"] == workflow]
         if failed_df is not None and not failed_df.empty
@@ -643,15 +653,23 @@ with gr.Blocks(title="Manager Agent Gym — Eval Dashboard") as demo:
         "Agents join the team mid-episode (see each scenario's "
         "`create_team_timeline()`); these panels show how well each manager "
         "mode copes with that, aggregated across every `run_seed_*` of the "
-        "selected workflow. **Never assigned** = the agent got zero tasks "
-        "all episode. **Delayed assignment** = its first assignment came "
-        "several timesteps after it joined. **Capability gap at join** = "
-        "the manager's own state snapshot didn't yet expose the agent's "
-        "capabilities at its join timestep. **Failed tasks (recent "
-        "joiners)** = tasks that failed while assigned to one of these "
-        "agents — e.g. `assign_all` tends to score high on \"never "
-        "assigned\" because it only assigns tasks visible at its first "
-        "observation and no-ops for the rest of the episode."
+        "selected workflow."
+    )
+    gr.Markdown(
+        "- **Never assigned** = the agent got zero tasks all episode.\n"
+        "- **Delayed assignment** = its first assignment came several timesteps after it joined.\n"
+        "- **Capability gap at join** = the manager's own state snapshot didn't yet expose the agent's capabilities at its join timestep.\n"
+        "- **Failed tasks (recent joiners)** = tasks that failed while assigned to one of these agents"
+    )
+    mid_episode_only_checkbox = gr.Checkbox(
+        label="Mid-episode joiners only (join_timestep > 0) — exclude the starting roster",
+        value=True,
+        info=(
+            "create_team_timeline() encodes the initial team as joins at "
+            "t=0 too, so unchecked this mixes baseline utilization with "
+            "actual churn. Check this for the apples-to-apples "
+            "non-stationarity comparison."
+        ),
     )
     nonstationarity_plot = gr.Plot(label="Non-stationarity handling by manager mode")
     nonstationarity_table = gr.Dataframe(
@@ -689,15 +707,17 @@ with gr.Blocks(title="Manager Agent Gym — Eval Dashboard") as demo:
     )
     demo.load(on_reload, outputs=[state_df, joins_state, failed_state, workflow_dropdown])
 
-    def on_workflow_change(df, joins_df, failed_df, workflow):
+    def on_workflow_change(df, joins_df, failed_df, workflow, mid_episode_only):
         sub = filter_workflow(df, workflow)
         figure = make_combined_figure(sub)
 
-        agg = make_nonstationarity_agg(joins_df, failed_df, df, workflow)
+        agg = make_nonstationarity_agg(joins_df, failed_df, df, workflow, mid_episode_only)
         ns_figure = make_nonstationarity_figure(agg)
 
         if joins_df is not None and not joins_df.empty and workflow:
             wf_joins = joins_df[joins_df["workflow"] == workflow]
+            if mid_episode_only:
+                wf_joins = wf_joins[wf_joins["join_timestep"] > 0]
             wf_joins = wf_joins.sort_values(
                 by=["never_assigned", "delayed", "manager_mode", "join_timestep"],
                 ascending=[False, False, True, True],
@@ -706,7 +726,10 @@ with gr.Blocks(title="Manager Agent Gym — Eval Dashboard") as demo:
             wf_joins = pd.DataFrame(columns=JOIN_COLUMNS)
 
         if failed_df is not None and not failed_df.empty and workflow:
-            wf_failed = failed_df[failed_df["workflow"] == workflow].reset_index(drop=True)
+            wf_failed = failed_df[failed_df["workflow"] == workflow]
+            if mid_episode_only:
+                wf_failed = wf_failed[wf_failed["agent_join_timestep"] > 0]
+            wf_failed = wf_failed.reset_index(drop=True)
         else:
             wf_failed = pd.DataFrame(columns=FAILED_RECENT_COLUMNS)
 
@@ -717,7 +740,21 @@ with gr.Blocks(title="Manager Agent Gym — Eval Dashboard") as demo:
 
     workflow_dropdown.change(
         on_workflow_change,
-        inputs=[state_df, joins_state, failed_state, workflow_dropdown],
+        inputs=[state_df, joins_state, failed_state, workflow_dropdown, mid_episode_only_checkbox],
+        outputs=[
+            table,
+            combined_plot,
+            nonstationarity_plot,
+            nonstationarity_table,
+            join_timeline_table,
+            failed_recent_table,
+            run_dropdown,
+        ],
+    )
+
+    mid_episode_only_checkbox.change(
+        on_workflow_change,
+        inputs=[state_df, joins_state, failed_state, workflow_dropdown, mid_episode_only_checkbox],
         outputs=[
             table,
             combined_plot,
