@@ -253,25 +253,40 @@ def extract_rubric_violations(final_eval: dict | None) -> list[dict]:
 
 
 def check_capabilities_visible_at_join(
-    run_dir: Path, run_id: str, join_timestep: int, agent_id: str
+    run_dir: Path, join_timestep: int, agent_id: str
 ) -> bool | None:
-    """True if the join-timestep snapshot already exposes this agent's full
-    config (incl. agent_capabilities) to the manager-visible workflow state.
+    """True if the *manager's own observation* at the join timestep already
+    exposes this agent's capabilities — i.e. whether the manager could have
+    known about the new agent's skills when deciding what to do next.
 
-    Per-timestep workflow snapshots are written by WorkflowSerialiser.save_timestep
-    (manager_agent_gym/core/execution/output_writer.py) as
-    workflow_outputs/workflow_execution_<run_id>_t<NNNN>.json.
+    This deliberately does NOT check workflow_outputs/*_t<NNNN>.json (the
+    simulation's internal ground-truth agent registry): every agent's
+    agent_capabilities is static config set once in the scenario's team.py
+    at agent-creation time, never populated progressively, so that internal
+    snapshot always has it the instant the agent is added — making that
+    check vacuously True 100% of the time and unable to ever catch a real
+    gap. What can actually differ is what the manager was SHOWN: its
+    observation is built from ManagerObservation.available_agent_metadata
+    (recorded per-timestep in timestep_data/final_metrics.json's
+    timestep_results[i].metadata.manager_observation), which is a separate
+    read of the registry at observation-construction time and could in
+    principle omit or lag a just-joined agent. This checks that field
+    instead, so a gap here would mean the manager genuinely couldn't see
+    the new agent's capabilities yet, not just an artifact of what data
+    source we happened to inspect.
     """
-    wf_out = run_dir / "workflow_outputs"
-    snap_path = wf_out / f"workflow_execution_{run_id}_t{join_timestep:04d}.json"
-    snap = load_json(snap_path)
-    if not snap:
+    metrics = load_json(run_dir / "timestep_data" / "final_metrics.json")
+    if not metrics:
         return None
-    agents = snap.get("agents", [])
-    for a in agents:
-        if a.get("agent_id") == agent_id:
-            cfg = a.get("config") or {}
-            return bool(cfg.get("agent_capabilities"))
+    for tr in metrics.get("timestep_results", []):
+        md = tr.get("metadata") or {}
+        if md.get("timestep") != join_timestep:
+            continue
+        mo = md.get("manager_observation") or {}
+        for a in mo.get("available_agent_metadata", []):
+            if a.get("agent_id") == agent_id:
+                return bool(a.get("agent_capabilities"))
+        return False  # observation existed at this timestep but omitted the agent entirely
     return None
 
 
@@ -330,7 +345,7 @@ def analyze_run(workflow_name: str, manager_mode: str, seed: int | None) -> RunA
                 delayed=(lag is not None and lag > DELAY_THRESHOLD_TIMESTEPS),
                 never_assigned=(first_ts is None),
                 capabilities_visible_at_join=check_capabilities_visible_at_join(
-                    run_dir, run_id, join_ts, agent_id
+                    run_dir, join_ts, agent_id
                 ),
             )
         )
