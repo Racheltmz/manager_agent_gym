@@ -41,7 +41,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from examples.scenarios import SCENARIOS  # noqa: E402
 
-ALL_WORKFLOWS = ["legal_m_and_a", "marketing_campaign", "tech_company_acquisition"]
+ALL_WORKFLOWS = ["legal_m_and_a", "marketing_campaign", "tech_company_acquisition", "orsa"]
 ALL_MODES = ["cot", "random", "assign_all"]
 OUT_ROOT = REPO_ROOT / "diagnostics" / "outputs"
 
