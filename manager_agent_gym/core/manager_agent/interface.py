@@ -88,6 +88,7 @@ class ManagerAgent(ABC):
         completed_task_ids: set,
         failed_task_ids: set,
         communication_service: "CommunicationService | None" = None,
+        agent_coordination_changes: list[str] | None = None,
     ) -> ManagerObservation:
         """
         Create manager observation from workflow state.
@@ -102,6 +103,8 @@ class ManagerAgent(ABC):
             completed_task_ids: Set of completed task IDs
             failed_task_ids: Set of failed task IDs
             communication_service: Optional communication service for messages
+            agent_coordination_changes: Agent join/remove events applied this
+                timestep (from Engine._check_and_apply_agent_changes), if any
 
         Returns:
             ManagerObservation with workflow state data
@@ -160,6 +163,7 @@ class ManagerAgent(ABC):
             resource_ids=list(workflow.resources.keys()),
             agent_ids=list(workflow.agents.keys()),
             stakeholder_profile=stakeholder_profile,
+            roster_changes_this_timestep=agent_coordination_changes or [],
         )
 
     # Note: take_action(observation) has been removed from the abstract interface in favor of step(...).
@@ -177,6 +181,7 @@ class ManagerAgent(ABC):
         communication_service: "CommunicationService | None" = None,
         previous_reward: float = 0.0,
         done: bool = False,
+        agent_coordination_changes: list[str] | None = None,
     ) -> BaseManagerAction:
         """
         One-call RL-friendly step: build observation and return an action.

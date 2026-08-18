@@ -66,6 +66,15 @@ class ManagerObservation(BaseModel):
         default_factory=list, description="Workflow constraints (hard/soft/etc.)"
     )
 
+    # Team roster changes applied at this timestep (e.g. "Added ip_counsel: ...",
+    # "Removed seo_analyst_ai: ..."), empty if none. Lets a manager notice a
+    # roster change without having to diff available_agent_metadata against
+    # its own memory of a prior timestep.
+    roster_changes_this_timestep: list[str] = Field(
+        default_factory=list,
+        description="Agent join/remove events applied at the current timestep",
+    )
+
     # Dynamic ID universes for schema-constrained action generation
     # These allow the manager agents to constrain IDs to valid values at generation time
     task_ids: list[UUID] = Field(

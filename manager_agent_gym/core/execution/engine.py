@@ -423,6 +423,7 @@ class WorkflowExecutionEngine:
                 previous_reward=self.validation_engine.most_recent_reward,
                 done=done_flag,
                 stakeholder_profile=self.stakeholder_agent.public_profile,
+                agent_coordination_changes=agent_coordination_changes,
             )
             try:
                 action_result = await manager_action.execute(

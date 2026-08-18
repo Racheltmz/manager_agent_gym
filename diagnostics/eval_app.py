@@ -204,10 +204,7 @@ def make_nonstationarity_figure(agg_df: pd.DataFrame):
 #   exhausted         - not complete, but no backlog left (nothing more to do)
 #   truncated         - not complete, backlog > 0, and it stopped within
 #                        TRUNCATED_TIMESTEP_THRESHOLD timesteps — the
-#                        signature of an interrupted/crashed run (this is
-#                        what caught assign_all/legal_m_and_a/run_seed_42's
-#                        stray 2-timestep rerun mixed in with a stale
-#                        50-timestep run's leftover files)
+#                        signature of an interrupted/crashed run
 #   in_progress_long  - not complete, backlog > 0, ran a normal number of
 #                        timesteps — just didn't finish within budget, which
 #                        is legitimate data, not a broken run

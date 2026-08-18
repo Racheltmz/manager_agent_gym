@@ -131,6 +131,7 @@ class ChainOfThoughtManagerAgent(ManagerAgent):
         communication_service=None,
         previous_reward: float = 0.0,
         done: bool = False,
+        agent_coordination_changes: list[str] | None = None,
     ) -> BaseManagerAction:
         observation = await self.create_observation(
             workflow=workflow,
@@ -141,6 +142,7 @@ class ChainOfThoughtManagerAgent(ManagerAgent):
             failed_task_ids=failed_task_ids,
             communication_service=communication_service,
             stakeholder_profile=stakeholder_profile,
+            agent_coordination_changes=agent_coordination_changes,
         )
         return await self.take_action(observation)
 
@@ -274,6 +276,14 @@ class ChainOfThoughtManagerAgent(ManagerAgent):
             f"- all_resource_ids (count={len(observation.resource_ids)}): sample={[str(x) for x in observation.resource_ids[:preview_n]]}",
         ]
 
+        # Team roster changes applied this timestep (agent joins/removals)
+        roster_change_lines = [f"- {c}" for c in observation.roster_changes_this_timestep]
+        roster_changes_block = (
+            "\n".join(roster_change_lines)
+            if roster_change_lines
+            else "(no roster changes this timestep)"
+        )
+
         # Stakeholder profile (public data only)
         stakeholder_block = observation.stakeholder_profile.model_dump_json(indent=2)
 
@@ -305,6 +315,10 @@ class ChainOfThoughtManagerAgent(ManagerAgent):
 
 ### Task Status Counts
 - ready: {ready_count} | running: {running_count} | completed: {completed_count} | failed: {failed_count}
+
+### Team Roster Changes (this timestep)
+{roster_changes_block}
+Agents added this timestep are already included in Available Agents above and are eligible for assignment now; treat them as active candidates alongside existing agents rather than only considering agents used in prior timesteps.
 
 ### ID Universes
 {id_guidance_lines}

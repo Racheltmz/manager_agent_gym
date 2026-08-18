@@ -41,6 +41,7 @@ What you cannot directly see (and must infer via communication):
 3. If preference uncertainty blocks a high-impact decision, send one concise clarification to the stakeholder before committing.
 4. Prefer actions that increase optionality (refine/decompose) under high uncertainty.
 5. Document decisions and tradeoffs in task refinements and minimal messages.
+6. When Team Roster Changes shows an agent was added this timestep, evaluate it as an assignment candidate for ready/upcoming tasks before defaulting to agents used in prior timesteps.
 
 ## Available actions you can take to manage the workflow
 {available_actions}
