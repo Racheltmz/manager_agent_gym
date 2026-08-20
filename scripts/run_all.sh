@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # Diagnostic suite: team-based non-stationarity / open ad-hoc teamwork.
 #
-# Runs the 3 churn-heavy scenarios (legal_m_and_a, marketing_campaign,
-# tech_company_acquisition) against the 3 baseline manager modes
-# (cot, random, assign_all) using gpt-4o-mini via OpenAI, with a fixed seed
-# for cross-condition comparability.
+# Runs the 3 churn-heavy scenarios (legal_m_and_a, marketing_campaign, orsa) 
+# against the 3 baseline manager modes (cot, random, assign_all) using gpt-5 via 
+# OpenAI, with a fixed seed for cross-condition comparability.
 #
 # All team timelines already exist in the scenario modules
 # (examples/end_to_end_examples/<scenario>/team.py) via create_team_timeline(),
@@ -21,9 +20,9 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-WORKFLOWS=(legal_m_and_a marketing_campaign tech_company_acquisition)
+WORKFLOWS=(legal_m_and_a marketing_campaign orsa)
 MODES=(cot random assign_all)
-MODEL_NAME="gpt-4o-mini"
+MODEL_NAME="gpt-5"
 SEED=42
 MAX_TIMESTEPS="${MAX_TIMESTEPS:-}"   # leave empty to use each scenario's natural length / default (50)
 OUT_ROOT="diagnostics/outputs"
@@ -50,13 +49,13 @@ for mode in "${MODES[@]}"; do
       rm -rf "$RUN_DIR"
     fi
     LOG_FILE="$OUT_ROOT/logs/${wf}__${mode}.log"
-    python examples/run_examples.py \
+    uv run python examples/run_examples.py \
       --workflow_name "$wf" \
       --manager-agent-mode "$mode" \
       --model-name "$MODEL_NAME" \
       --output-dir "$OUT_ROOT/$mode" \
       --seed "$SEED" \
-      "${TIMESTEP_ARGS[@]}" \
+      "${TIMESTEP_ARGS[@]+"${TIMESTEP_ARGS[@]}"}" \
       2>&1 | tee "$LOG_FILE"
   done
 done

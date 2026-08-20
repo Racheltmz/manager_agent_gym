@@ -41,9 +41,29 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from examples.scenarios import SCENARIOS  # noqa: E402
 
-ALL_WORKFLOWS = ["legal_m_and_a", "marketing_campaign", "tech_company_acquisition", "orsa"]
 ALL_MODES = ["cot", "random", "assign_all"]
 OUT_ROOT = REPO_ROOT / "diagnostics" / "outputs"
+
+
+def discover_workflows() -> list[str]:
+    """Workflow names are the subdirectories under each manager-mode output dir,
+    e.g. diagnostics/outputs/<mode>/<workflow_name>/run_*."""
+    names: set[str] = set()
+    for mode_dir in OUT_ROOT.iterdir():
+        if not mode_dir.is_dir():
+            continue
+        for workflow_dir in mode_dir.iterdir():
+            if workflow_dir.is_dir():
+                names.add(workflow_dir.name)
+    if not names:
+        raise SystemExit(
+            f"No workflow output directories found under {OUT_ROOT}. "
+            "Run diagnostics/run_diagnostic_suite.sh first, or pass --workflows explicitly."
+        )
+    return sorted(names)
+
+
+ALL_WORKFLOWS = discover_workflows() if OUT_ROOT.is_dir() else []
 
 # How many timesteps after joining an agent must receive its first
 # assignment before we flag it as "delayed handling".

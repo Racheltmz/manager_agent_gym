@@ -64,7 +64,11 @@ RIGHT_AXIS_METRIC = "workflow_completion_time_hours"
 def make_combined_figure(df: pd.DataFrame, metrics: list[str] = METRICS):
     """One grouped (dodged) bar chart: x=manager_mode, one bar per metric per
     mode, with the completion-time metric plotted against a secondary right
-    axis since it's in hours rather than a normalized 0-1 score."""
+    axis since it's in hours rather than a normalized 0-1 score.
+
+    `df` may contain multiple rows (seeds) per manager_mode — each bar plots
+    the mean across those seeds' runs, with a std-dev error bar shown
+    whenever more than one seed is present for that mode/metric."""
     fig, ax = plt.subplots(figsize=(11, 4.5))
     ax2 = ax.twinx()
     if df is None or df.empty:
@@ -79,16 +83,28 @@ def make_combined_figure(df: pd.DataFrame, metrics: list[str] = METRICS):
     bars, labels = [], []
     for i, metric in enumerate(metrics):
         label, color = METRIC_STYLE[metric]
-        values = [
-            df.loc[df["manager_mode"] == mode, metric].iloc[0]
-            if mode in set(df["manager_mode"])
-            else None
-            for mode in modes
-        ]
-        values = [v if v is not None else 0 for v in values]
+        means, stds = [], []
+        for mode in modes:
+            runs = df.loc[df["manager_mode"] == mode, metric].dropna()
+            if runs.empty:
+                means.append(0)
+                stds.append(0)
+            else:
+                means.append(runs.mean())
+                stds.append(runs.std(ddof=0) if len(runs) > 1 else 0)
         offsets = [x + (i - (n_metrics - 1) / 2) * bar_width for x in x_positions]
         target_ax = ax2 if metric == RIGHT_AXIS_METRIC else ax
-        bar = target_ax.bar(offsets, values, width=bar_width, label=label, color=color)
+        bar = target_ax.bar(
+            offsets,
+            means,
+            width=bar_width,
+            label=label,
+            color=color,
+            yerr=stds,
+            capsize=2,
+            ecolor="black",
+            error_kw={"elinewidth": 1},
+        )
         bars.append(bar)
         labels.append(label)
 
@@ -287,6 +303,7 @@ def load_summaries() -> pd.DataFrame:
         run_dir = str(summary_path.parent)
         row = {
             "workflow": data.get("workflow"),
+            "workflow_folder": summary_path.parent.parent.name,
             "manager_mode": data.get("manager_mode"),
             "run_dir": run_dir,
         }
@@ -306,6 +323,7 @@ def load_summaries() -> pd.DataFrame:
         rows.append(row)
     columns = [
         "workflow",
+        "workflow_folder",
         "manager_mode",
         *METRICS,
         "total_tasks",
@@ -587,10 +605,34 @@ def list_run_choices(df: pd.DataFrame, workflow: str | None) -> list[str]:
     return [f"{row.manager_mode} :: {row.run_dir}" for row in sub.itertuples()]
 
 
-def refresh():
+def _is_main_variant_row(run_dir: str, workflow: str | None) -> bool:
+    """The workflow folder (second-to-last part of run_dir) should match the
+    `workflow` field recorded inside summary.json. When it doesn't — e.g.
+    `.../random/legal_m_and_a_mini/run_seed_42` reporting workflow
+    "legal_m_and_a" — the run is a model-variant experiment (`_mini` = gpt-4o-mini)
+    rather than the main experiment set, and is hidden unless "show all" is checked."""
+    if not run_dir or not workflow:
+        return False
+    return Path(run_dir).parent.name == workflow
+
+
+def _filter_main_variant(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+    mask = df.apply(
+        lambda r: _is_main_variant_row(r["run_dir"], r["workflow"]), axis=1
+    )
+    return df[mask].reset_index(drop=True)
+
+
+def refresh(show_all_variants: bool = False):
     df = load_summaries()
     joins_df = load_join_details()
     failed_df = load_failed_recent_joiners()
+    if not show_all_variants:
+        df = _filter_main_variant(df)
+        joins_df = _filter_main_variant(joins_df)
+        failed_df = _filter_main_variant(failed_df)
     workflows = sorted(df["workflow"].dropna().unique().tolist())
     dd_update = gr.update(choices=workflows, value=workflows[0] if workflows else None)
     return df, joins_df, failed_df, dd_update
@@ -602,6 +644,7 @@ def filter_workflow(df: pd.DataFrame, workflow: str | None) -> pd.DataFrame:
     sub = df[df["workflow"] == workflow].reset_index(drop=True)
     display_cols = [
         "manager_mode",
+        "workflow_folder",
         "run_status",
         *METRICS,
         "total_tasks",
@@ -636,6 +679,16 @@ with gr.Blocks(title="Manager Agent Gym — Eval Dashboard") as demo:
     with gr.Row():
         reload_btn = gr.Button("Reload summaries", variant="primary")
         workflow_dropdown = gr.Dropdown(label="Benchmark (workflow)", choices=[], interactive=True)
+        show_all_variants_checkbox = gr.Checkbox(
+            label="Show all model variants (incl. _mini)",
+            value=False,
+            info=(
+                "Off by default: only runs whose workflow folder name matches "
+                "the workflow recorded in summary.json are shown (the main "
+                "experiment set). Check this to also see _mini (gpt-4o-mini) "
+                "variant runs, whose folder name doesn't match."
+            ),
+        )
 
     table = gr.Dataframe(label="Metrics by manager mode", interactive=False)
 
@@ -645,7 +698,23 @@ with gr.Blocks(title="Manager Agent Gym — Eval Dashboard") as demo:
     # colored to match the reference benchmark figure's legend.
     combined_plot = gr.Plot(label="Metrics by manager mode")
 
-    gr.Markdown("## Team Membership Non-Stationarity Analysis")
+    gr.Markdown("## Run Timeline: Task Status & Team Membership Over Time")
+    gr.Markdown(
+        "Pick a single run to see task-status counts (pending/ready/running/"
+        "completed/failed) and team size plotted per timestep, with a "
+        "workflow-progress % line on the right axis. Dotted green/red "
+        "vertical lines mark timesteps where an agent joined or was "
+        "removed, labeled with the agent id(s) — use this to see whether a "
+        "roster change (e.g. specialists joining mid-deal) lines up with a "
+        "stall, a burst of completions, or a failure spike."
+    )
+    run_dropdown = gr.Dropdown(label="Run (mode :: run_dir)", choices=[], interactive=True)
+    run_timeline_plot = gr.Plot(label="Task status & team size timeline")
+    run_events_table = gr.Dataframe(
+        label="Agent join/removal events", interactive=False, max_height=400
+    )
+    
+    gr.Markdown("## Open Ad Hoc Teamwork Analysis")
     gr.Markdown(
         "Agents join the team mid-episode (see each scenario's "
         "`create_team_timeline()`); these panels show how well each manager "
@@ -664,8 +733,7 @@ with gr.Blocks(title="Manager Agent Gym — Eval Dashboard") as demo:
         info=(
             "create_team_timeline() encodes the initial team as joins at "
             "t=0 too, so unchecked this mixes baseline utilization with "
-            "actual churn. Check this for the apples-to-apples "
-            "non-stationarity comparison."
+            "actual churn. Check this for the non-stationarity comparison."
         ),
     )
     nonstationarity_plot = gr.Plot(label="Non-stationarity handling by manager mode")
@@ -679,30 +747,9 @@ with gr.Blocks(title="Manager Agent Gym — Eval Dashboard") as demo:
     gr.Markdown("### Failed tasks assigned to recently-joined agents (all runs)")
     failed_recent_table = gr.Dataframe(interactive=False)
 
-    gr.Markdown("## Run Timeline: Task Status & Team Membership Over Time")
-    gr.Markdown(
-        "Pick a single run to see task-status counts (pending/ready/running/"
-        "completed/failed) and team size plotted per timestep, with a "
-        "workflow-progress % line on the right axis. Dotted green/red "
-        "vertical lines mark timesteps where an agent joined or was "
-        "removed, labeled with the agent id(s) — use this to see whether a "
-        "roster change (e.g. specialists joining mid-deal) lines up with a "
-        "stall, a burst of completions, or a failure spike."
-    )
-    run_dropdown = gr.Dropdown(label="Run (mode :: run_dir)", choices=[], interactive=True)
-    run_timeline_plot = gr.Plot(label="Task status & team size timeline")
-    run_events_table = gr.Dataframe(
-        label="Agent join/removal events", interactive=False, max_height=400
-    )
-
-    def on_reload():
-        df, joins_df, failed_df, dd_update = refresh()
+    def on_reload(show_all_variants):
+        df, joins_df, failed_df, dd_update = refresh(show_all_variants)
         return df, joins_df, failed_df, dd_update
-
-    reload_btn.click(
-        on_reload, outputs=[state_df, joins_state, failed_state, workflow_dropdown]
-    )
-    demo.load(on_reload, outputs=[state_df, joins_state, failed_state, workflow_dropdown])
 
     def on_workflow_change(df, joins_df, failed_df, workflow, mid_episode_only):
         sub = filter_workflow(df, workflow)
@@ -762,6 +809,43 @@ with gr.Blocks(title="Manager Agent Gym — Eval Dashboard") as demo:
             run_dropdown,
         ],
     )
+
+    workflow_change_outputs = [
+        table,
+        combined_plot,
+        nonstationarity_plot,
+        nonstationarity_table,
+        join_timeline_table,
+        failed_recent_table,
+        run_dropdown,
+    ]
+    workflow_change_inputs = [
+        state_df,
+        joins_state,
+        failed_state,
+        workflow_dropdown,
+        mid_episode_only_checkbox,
+    ]
+
+    # Updating workflow_dropdown's value/choices programmatically (as part of
+    # on_reload's outputs) does not reliably re-fire its own .change listener,
+    # so each reload path chains on_workflow_change explicitly via .then()
+    # rather than relying on that implicit trigger.
+    reload_btn.click(
+        on_reload,
+        inputs=[show_all_variants_checkbox],
+        outputs=[state_df, joins_state, failed_state, workflow_dropdown],
+    ).then(on_workflow_change, inputs=workflow_change_inputs, outputs=workflow_change_outputs)
+    demo.load(
+        on_reload,
+        inputs=[show_all_variants_checkbox],
+        outputs=[state_df, joins_state, failed_state, workflow_dropdown],
+    ).then(on_workflow_change, inputs=workflow_change_inputs, outputs=workflow_change_outputs)
+    show_all_variants_checkbox.change(
+        on_reload,
+        inputs=[show_all_variants_checkbox],
+        outputs=[state_df, joins_state, failed_state, workflow_dropdown],
+    ).then(on_workflow_change, inputs=workflow_change_inputs, outputs=workflow_change_outputs)
 
     def on_run_change(run_choice):
         run_dir = run_choice_to_dir(run_choice)

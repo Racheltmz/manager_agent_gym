@@ -15,7 +15,7 @@ class AgentConfig(BaseModel):
 
     # Core behavior configuration
     system_prompt: str = Field(..., description="System instructions for the agent")
-    model_name: str = Field(default="gpt-4o-mini", description="LLM model to use")
+    model_name: str = Field(default="gpt-4.1", description="LLM model to use")
 
     agent_description: str = Field(..., description="Description of the agent")
     agent_capabilities: list[str] = Field(..., description="Capabilities of the agent")

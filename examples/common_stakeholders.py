@@ -22,7 +22,7 @@ def _build_persona_config(
                 "Highly involved, interrupts often, requests clarifications and pushes suggestions."
             ),
             system_prompt="Stakeholder agent (nitpicky persona)",
-            model_name="gpt-4o-mini",
+            model_name="o3",
             initial_preferences=preferences,
             response_latency_steps_min=0,
             response_latency_steps_max=1,
@@ -49,7 +49,7 @@ def _build_persona_config(
                 "Very hands-off, rarely interrupts, minimal clarifications, relies on manager."
             ),
             system_prompt="Stakeholder agent (hands-off persona)",
-            model_name="gpt-4o-mini",
+            model_name="o3",
             initial_preferences=preferences,
             response_latency_steps_min=1,
             response_latency_steps_max=3,
@@ -76,7 +76,7 @@ def _build_persona_config(
             "Balanced involvement: occasional clarifications and suggestions; pragmatic and time-aware."
         ),
         system_prompt="Stakeholder agent (balanced persona)",
-        model_name="gpt-4o-mini",
+        model_name="o3",
         initial_preferences=preferences,
         response_latency_steps_min=0,
         response_latency_steps_max=2,
