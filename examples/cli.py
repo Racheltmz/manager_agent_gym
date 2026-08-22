@@ -46,7 +46,7 @@ DEFAULT_SCENARIOS: list[str] = [
     "airline_launch_program",
 ]
 
-MANAGER_MODE_CHOICES: list[str] = ["cot", "random", "assign_all"]
+MANAGER_MODE_CHOICES: list[str] = ["cot", "cot_aware", "random", "assign_all"]
 MODEL_NAME_SUGGESTIONS: list[str] = [
     "gpt-5",
     "gpt-5-mini",

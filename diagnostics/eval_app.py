@@ -3,7 +3,7 @@ Gradio app to browse diagnostic run results.
 
 Scans diagnostics/outputs/<manager_mode>/<workflow>/run_seed_*/summary.json
 (written by diagnostics/analyze_diagnostic_runs.py) and compares manager
-modes (cot / random / assign_all) against each other, per workflow, on the
+modes (cot / cot_aware / random / assign_all) against each other, per workflow, on the
 five headline scalar metrics found in each summary.json:
 
     weighted_preference_total, constraint_adherence, stakeholder_management,
@@ -54,7 +54,7 @@ METRIC_STYLE: dict[str, tuple[str, str]] = {
     "workflow_completion_time_hours": ("Workflow Completion Time (hrs)", "#9467bd"),
 }
 
-MODE_ORDER = ["random", "cot", "assign_all"]
+MODE_ORDER = ["random", "cot", "cot_aware", "assign_all"]
 
 # workflow_completion_time_hours lives on its own right-hand axis (hours),
 # same as "Workflow Completion Time" in the reference benchmark figure —
@@ -609,37 +609,81 @@ def list_run_choices(df: pd.DataFrame, workflow: str | None) -> list[str]:
     return [f"{row.manager_mode} :: {row.run_dir}" for row in sub.itertuples()]
 
 
-def _is_main_variant_row(run_dir: str, workflow: str | None) -> bool:
+ALL_VARIANTS = "All variants"
+MAIN_VARIANT = "main"
+
+
+def _variant_group(run_dir: str, workflow: str | None) -> str:
     """The workflow folder (second-to-last part of run_dir) should match the
     `workflow` field recorded inside summary.json. When it doesn't — e.g.
     `.../random/legal_m_and_a_mini/run_seed_42` reporting workflow
-    "legal_m_and_a" — the run is a model-variant experiment (`_mini` = gpt-4o-mini)
-    rather than the main experiment set, and is hidden unless "show all" is checked."""
+    "legal_m_and_a" — the run is a model-variant experiment and its folder
+    name is expected to be `<workflow>_<variant>` (`_mini` = gpt-4o-mini,
+    `_aware` = capability-aware manager, etc). Returns "main" for an exact
+    match, the `<variant>` suffix for a recognized `<workflow>_<variant>`
+    folder, or "other" for anything else (folder name doesn't start with
+    the workflow name at all)."""
     if not run_dir or not workflow:
-        return False
-    return Path(run_dir).parent.name == workflow
+        return MAIN_VARIANT
+    folder_name = Path(run_dir).parent.name
+    if folder_name == workflow:
+        return MAIN_VARIANT
+    prefix = f"{workflow}_"
+    if folder_name.startswith(prefix):
+        return folder_name[len(prefix):]
+    return "other"
 
 
-def _filter_main_variant(df: pd.DataFrame) -> pd.DataFrame:
+def _add_variant_group(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
+        df = df.copy() if df is not None else df
+        if df is not None:
+            df["variant_group"] = pd.Series(dtype=object)
         return df
-    mask = df.apply(
-        lambda r: _is_main_variant_row(r["run_dir"], r["workflow"]), axis=1
+    df = df.copy()
+    df["variant_group"] = df.apply(
+        lambda r: _variant_group(r["run_dir"], r["workflow"]), axis=1
     )
-    return df[mask].reset_index(drop=True)
+    return df
 
 
-def refresh(show_all_variants: bool = False):
-    df = load_summaries()
-    joins_df = load_join_details()
-    failed_df = load_failed_recent_joiners()
-    if not show_all_variants:
-        df = _filter_main_variant(df)
-        joins_df = _filter_main_variant(joins_df)
-        failed_df = _filter_main_variant(failed_df)
+def _filter_variant_group(df: pd.DataFrame, variant_group: str | None) -> pd.DataFrame:
+    if df is None or df.empty or not variant_group or variant_group == ALL_VARIANTS:
+        return df
+    return df[df["variant_group"] == variant_group].reset_index(drop=True)
+
+
+def list_variant_groups(df: pd.DataFrame) -> list[str]:
+    """All variant groups present across every run, "main" first (if
+    present), then the rest alphabetically, with an "All variants" option
+    appended last."""
+    if df is None or df.empty or "variant_group" not in df.columns:
+        groups: list[str] = []
+    else:
+        found = set(df["variant_group"].dropna().unique().tolist())
+        groups = ([MAIN_VARIANT] if MAIN_VARIANT in found else []) + sorted(
+            found - {MAIN_VARIANT}
+        )
+    return groups + [ALL_VARIANTS]
+
+
+def refresh(variant_group: str = MAIN_VARIANT):
+    df = _add_variant_group(load_summaries())
+    joins_df = _add_variant_group(load_join_details())
+    failed_df = _add_variant_group(load_failed_recent_joiners())
+
+    variant_choices = list_variant_groups(df)
+    if variant_group not in variant_choices:
+        variant_group = MAIN_VARIANT if MAIN_VARIANT in variant_choices else ALL_VARIANTS
+    variant_dd_update = gr.update(choices=variant_choices, value=variant_group)
+
+    df = _filter_variant_group(df, variant_group)
+    joins_df = _filter_variant_group(joins_df, variant_group)
+    failed_df = _filter_variant_group(failed_df, variant_group)
+
     workflows = sorted(df["workflow"].dropna().unique().tolist())
     dd_update = gr.update(choices=workflows, value=workflows[0] if workflows else None)
-    return df, joins_df, failed_df, dd_update
+    return df, joins_df, failed_df, dd_update, variant_dd_update
 
 
 def filter_workflow(df: pd.DataFrame, workflow: str | None) -> pd.DataFrame:
@@ -683,14 +727,18 @@ with gr.Blocks(title="Manager Agent Gym — Eval Dashboard") as demo:
     with gr.Row():
         reload_btn = gr.Button("Reload summaries", variant="primary")
         workflow_dropdown = gr.Dropdown(label="Benchmark (workflow)", choices=[], interactive=True)
-        show_all_variants_checkbox = gr.Checkbox(
-            label="Show all model variants (incl. _mini)",
-            value=False,
+        variant_dropdown = gr.Dropdown(
+            label="Model variant",
+            choices=[MAIN_VARIANT, ALL_VARIANTS],
+            value=MAIN_VARIANT,
+            interactive=True,
             info=(
-                "Off by default: only runs whose workflow folder name matches "
-                "the workflow recorded in summary.json are shown (the main "
-                "experiment set). Check this to also see _mini (gpt-4o-mini) "
-                "variant runs, whose folder name doesn't match."
+                "Defaults to \"main\": only runs whose workflow folder name "
+                "matches the workflow recorded in summary.json. Variant runs "
+                "live in folders named <workflow>_<variant> (e.g. _mini for "
+                "gpt-4o-mini, _aware for a capability-aware manager) and are "
+                "grouped here by that <variant> suffix — pick one to see just "
+                "that group, or \"All variants\" to see everything."
             ),
         )
 
@@ -751,9 +799,9 @@ with gr.Blocks(title="Manager Agent Gym — Eval Dashboard") as demo:
     gr.Markdown("### Failed tasks assigned to recently-joined agents (all runs)")
     failed_recent_table = gr.Dataframe(interactive=False)
 
-    def on_reload(show_all_variants):
-        df, joins_df, failed_df, dd_update = refresh(show_all_variants)
-        return df, joins_df, failed_df, dd_update
+    def on_reload(variant_group):
+        df, joins_df, failed_df, dd_update, variant_dd_update = refresh(variant_group)
+        return df, joins_df, failed_df, dd_update, variant_dd_update
 
     def on_workflow_change(df, joins_df, failed_df, workflow, mid_episode_only):
         sub = filter_workflow(df, workflow)
@@ -837,18 +885,18 @@ with gr.Blocks(title="Manager Agent Gym — Eval Dashboard") as demo:
     # rather than relying on that implicit trigger.
     reload_btn.click(
         on_reload,
-        inputs=[show_all_variants_checkbox],
-        outputs=[state_df, joins_state, failed_state, workflow_dropdown],
+        inputs=[variant_dropdown],
+        outputs=[state_df, joins_state, failed_state, workflow_dropdown, variant_dropdown],
     ).then(on_workflow_change, inputs=workflow_change_inputs, outputs=workflow_change_outputs)
     demo.load(
         on_reload,
-        inputs=[show_all_variants_checkbox],
-        outputs=[state_df, joins_state, failed_state, workflow_dropdown],
+        inputs=[variant_dropdown],
+        outputs=[state_df, joins_state, failed_state, workflow_dropdown, variant_dropdown],
     ).then(on_workflow_change, inputs=workflow_change_inputs, outputs=workflow_change_outputs)
-    show_all_variants_checkbox.change(
+    variant_dropdown.change(
         on_reload,
-        inputs=[show_all_variants_checkbox],
-        outputs=[state_df, joins_state, failed_state, workflow_dropdown],
+        inputs=[variant_dropdown],
+        outputs=[state_df, joins_state, failed_state, workflow_dropdown, variant_dropdown],
     ).then(on_workflow_change, inputs=workflow_change_inputs, outputs=workflow_change_outputs)
 
     def on_run_change(run_choice):

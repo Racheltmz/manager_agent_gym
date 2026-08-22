@@ -5,6 +5,11 @@ This module contains prompt templates for the structured manager agent,
 separated for better maintainability and organization.
 """
 
+# Optional tradeoff-playbook line nudging the manager to consider agents added
+# this timestep as assignment candidates; only included when the manager is
+# configured with include_roster_nudge=True.
+ROSTER_TRADEOFF_LINE = "6. When Team Roster Changes shows an agent was added this timestep, evaluate it as an assignment candidate for ready/upcoming tasks before defaulting to agents used in prior timesteps.\n"
+
 # Base system prompt template for the structured manager agent
 STRUCTURED_MANAGER_SYSTEM_PROMPT_TEMPLATE = """## Background
 Today's date is {today_date} in dd.mm.yyyy format.
@@ -41,8 +46,7 @@ What you cannot directly see (and must infer via communication):
 3. If preference uncertainty blocks a high-impact decision, send one concise clarification to the stakeholder before committing.
 4. Prefer actions that increase optionality (refine/decompose) under high uncertainty.
 5. Document decisions and tradeoffs in task refinements and minimal messages.
-6. When Team Roster Changes shows an agent was added this timestep, evaluate it as an assignment candidate for ready/upcoming tasks before defaulting to agents used in prior timesteps.
-
+{roster_tradeoff_line}
 ## Available actions you can take to manage the workflow
 {available_actions}
 

@@ -6,7 +6,10 @@ Selection is controlled by:
 - Environment variables (MAG_MANAGER_MODE, MAG_MODEL_NAME)
 
 Supported manager modes (case-insensitive):
-- "cot" → ChainOfThoughtManagerAgent (structured manager)
+- "cot" → ChainOfThoughtManagerAgent (structured manager), original prompt
+  without the "newly-joined agents are eligible now" roster nudge
+- "cot_aware" → ChainOfThoughtManagerAgent with that roster nudge included
+  in the prompt, for A/B comparison against "cot"
 - "random" or "random_v2" → RandomManagerAgentV2
 - "random_v1" → RandomManagerAgent
 - "oneshot" → OneShotDelegateManagerAgent
@@ -30,10 +33,10 @@ def _normalize_mode(raw_mode: str | None) -> str:
     if not raw_mode:
         return "cot"
     mode = raw_mode.strip().lower()
-    allowed = {"cot", "random", "assign_all"}
+    allowed = {"cot", "cot_aware", "random", "assign_all"}
     if mode not in allowed:
         raise ValueError(
-            f"Unsupported MAG_MANAGER_MODE='{raw_mode}'. Use one of: cot, random, assign_all"
+            f"Unsupported MAG_MANAGER_MODE='{raw_mode}'. Use one of: cot, cot_aware, random, assign_all"
         )
     return mode
 
@@ -67,6 +70,11 @@ def create_manager_agent(
 
     creators: Dict[str, Callable[[], ManagerAgent]] = {
         "cot": lambda: ChainOfThoughtManagerAgent(
+            preferences=preferences,
+            model_name=resolved_model,
+            include_roster_nudge=False,
+        ),
+        "cot_aware": lambda: ChainOfThoughtManagerAgent(
             preferences=preferences, model_name=resolved_model
         ),
         # Canonical "random" uses RandomManagerAgentV2 by default
@@ -80,7 +88,7 @@ def create_manager_agent(
 
     if resolved_mode not in creators:
         raise ValueError(
-            f"Unknown MAG_MANAGER_MODE='{resolved_mode}'. Supported: cot, random, assign_all"
+            f"Unknown MAG_MANAGER_MODE='{resolved_mode}'. Supported: cot, cot_aware, random, assign_all"
         )
 
     return creators[resolved_mode]()
