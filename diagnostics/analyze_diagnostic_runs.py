@@ -80,6 +80,8 @@ class AgentJoinAnalysis:
     delayed: bool
     never_assigned: bool
     capabilities_visible_at_join: bool | None  # None if snapshot missing
+    had_backlog_opportunity: bool | None  # None if timestep data missing
+    assigned_in_another_mode: bool | None  # None if no other run available to check
 
 
 @dataclass
@@ -310,6 +312,83 @@ def check_capabilities_visible_at_join(
     return None
 
 
+def get_backlog_by_timestep(run_dir: Path) -> dict[int, int]:
+    """timestep -> pending+ready task count, read from the manager's own
+    per-timestep observation (timestep_data/final_metrics.json). pending+ready
+    is the set of tasks not yet started that could in principle be assigned —
+    NOT a capability-specific match to any one agent (tasks have no
+    structured required_capabilities field to check against; agent_capabilities
+    is freeform text the manager must reason about semantically). So this is
+    only a floor check: if backlog is 0 the whole time a joiner waited, "never
+    assigned"/"delayed" can't be blamed on the manager since there was
+    nothing to hand out at all; a nonzero backlog doesn't prove a matching
+    task existed, just that the possibility wasn't ruled out."""
+    metrics = load_json(run_dir / "timestep_data" / "final_metrics.json")
+    if not metrics:
+        return {}
+    backlog: dict[int, int] = {}
+    for tr in metrics.get("timestep_results", []):
+        md = tr.get("metadata") or {}
+        ts = md.get("timestep")
+        if ts is None:
+            continue
+        counts = (md.get("manager_observation") or {}).get("task_status_counts") or {}
+        backlog[ts] = (counts.get("pending", 0) or 0) + (counts.get("ready", 0) or 0)
+    return backlog
+
+
+def check_had_backlog_opportunity(
+    backlog_by_ts: dict[int, int], join_ts: int, first_assignment_ts: int | None
+) -> bool | None:
+    """Whether any unclaimed backlog (pending+ready > 0) existed at any
+    timestep between the agent's join and its first assignment (or, if it
+    was never assigned, between join and the last recorded timestep)."""
+    if not backlog_by_ts:
+        return None
+    window_end = (first_assignment_ts - 1) if first_assignment_ts is not None else max(backlog_by_ts)
+    window = [ts for ts in backlog_by_ts if join_ts <= ts <= window_end]
+    if not window:
+        return None
+    return any(backlog_by_ts[ts] > 0 for ts in window)
+
+
+def extract_seed_from_run_dir(run_dir: Path) -> int | None:
+    prefix = "run_seed_"
+    if run_dir.name.startswith(prefix):
+        try:
+            return int(run_dir.name[len(prefix):])
+        except ValueError:
+            return None
+    return None
+
+
+def get_agents_assigned_in_other_modes(
+    workflow_name: str, seed: int | None, exclude_mode: str
+) -> tuple[set[str], bool]:
+    """agent_ids assigned >=1 task in ANY *other* manager_mode's run of this
+    same workflow (same seed, so the same underlying task graph), plus
+    whether any such other run was actually found to check. Cheap, free
+    (no LLM call) cross-run evidence: if an agent's capabilities were
+    matched to a real task by a DIFFERENT manager, that agent's skillset
+    clearly maps to something in this workflow's task pool — so a run where
+    it was never assigned anything is harder to excuse as "no fitting work
+    existed" and easier to read as this run's manager under-utilizing it.
+    A False here is weaker evidence (the agent may still have had no fit,
+    or every mode we have data for missed it too), not proof of "no fit"."""
+    assigned: set[str] = set()
+    found_any_run = False
+    for mode in ALL_MODES:
+        if mode == exclude_mode:
+            continue
+        rd = find_run_dir(workflow_name, mode, seed)
+        if rd is None:
+            continue
+        found_any_run = True
+        run_id = extract_run_id(rd)
+        assigned.update(get_assignment_timesteps(rd, run_id).keys())
+    return assigned, found_any_run
+
+
 def analyze_run(workflow_name: str, manager_mode: str, seed: int | None) -> RunAnalysis:
     analysis = RunAnalysis(workflow=workflow_name, manager_mode=manager_mode, run_dir=None,
                             weighted_preference_total=None, total_tasks=None,
@@ -351,6 +430,11 @@ def analyze_run(workflow_name: str, manager_mode: str, seed: int | None) -> RunA
 
     join_events = get_team_join_events(workflow_name)
     first_assignment = get_assignment_timesteps(run_dir, run_id)
+    backlog_by_ts = get_backlog_by_timestep(run_dir)
+    seed_used = extract_seed_from_run_dir(run_dir)
+    assigned_elsewhere, other_runs_found = get_agents_assigned_in_other_modes(
+        workflow_name, seed_used, manager_mode
+    )
 
     for join_ts, agent_id, reason in join_events:
         first_ts = first_assignment.get(agent_id)
@@ -366,6 +450,12 @@ def analyze_run(workflow_name: str, manager_mode: str, seed: int | None) -> RunA
                 never_assigned=(first_ts is None),
                 capabilities_visible_at_join=check_capabilities_visible_at_join(
                     run_dir, join_ts, agent_id
+                ),
+                had_backlog_opportunity=check_had_backlog_opportunity(
+                    backlog_by_ts, join_ts, first_ts
+                ),
+                assigned_in_another_mode=(
+                    (agent_id in assigned_elsewhere) if other_runs_found else None
                 ),
             )
         )
@@ -411,7 +501,9 @@ def print_summary(results: list[RunAnalysis]) -> None:
             if a.delayed or a.never_assigned:
                 flag = "NEVER_ASSIGNED" if a.never_assigned else f"delayed_lag={a.assignment_lag}"
                 print(f"    ! {a.agent_id} joined@t={a.join_timestep} ({flag}) "
-                      f"capabilities_visible_at_join={a.capabilities_visible_at_join}")
+                      f"capabilities_visible_at_join={a.capabilities_visible_at_join} "
+                      f"had_backlog_opportunity={a.had_backlog_opportunity} "
+                      f"assigned_in_another_mode={a.assigned_in_another_mode}")
         if r.failed_tasks_assigned_to_recent_joiners:
             for f in r.failed_tasks_assigned_to_recent_joiners:
                 print(f"    x failed task {f['task_id']} -> {f['assigned_agent_id']} "

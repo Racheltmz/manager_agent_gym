@@ -31,6 +31,7 @@ from pathlib import Path
 import gradio as gr
 import matplotlib.pyplot as plt
 import pandas as pd
+from matplotlib.ticker import MultipleLocator
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 OUT_ROOT = REPO_ROOT / "diagnostics" / "outputs"
@@ -138,6 +139,8 @@ AGENT_JOIN_FIELDS = [
     "delayed",
     "never_assigned",
     "capabilities_visible_at_join",
+    "had_backlog_opportunity",
+    "assigned_in_another_mode",
 ]
 
 JOIN_COLUMNS = ["workflow", "manager_mode", "run_dir", *AGENT_JOIN_FIELDS]
@@ -200,6 +203,7 @@ def make_nonstationarity_figure(agg_df: pd.DataFrame):
     ax.set_xticks(list(x_positions))
     ax.set_xticklabels(modes, fontsize=12)
     ax.set_ylabel("Count (summed across runs)", fontsize=12)
+    ax.yaxis.set_major_locator(MultipleLocator(2))
     ax.legend(bars, labels, loc="upper left", bbox_to_anchor=(0, 1.15), fontsize=8, ncols=n_metrics)
     ax.spines["top"].set_visible(False)
     fig.tight_layout()

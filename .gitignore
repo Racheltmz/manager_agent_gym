@@ -48,3 +48,5 @@ analysis_outputs*/
 examples/analysis/*
 
 diagnostics/**/*.json
+
+CLAUDE.md
