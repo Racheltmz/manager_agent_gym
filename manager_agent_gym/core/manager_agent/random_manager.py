@@ -146,7 +146,6 @@ class RandomManagerAgent(ManagerAgent):
         communication_service=None,
         previous_reward: float = 0.0,
         done: bool = False,
-        agent_coordination_changes: list[str] | None = None,
     ) -> BaseManagerAction:
         observation = await self.create_observation(
             workflow=workflow,
@@ -157,7 +156,6 @@ class RandomManagerAgent(ManagerAgent):
             failed_task_ids=failed_task_ids,
             communication_service=communication_service,
             stakeholder_profile=stakeholder_profile,
-            agent_coordination_changes=agent_coordination_changes,
         )
         return await self.take_action(observation)
 
@@ -241,7 +239,6 @@ class RandomManagerAgentV2(ManagerAgent):
         communication_service=None,
         previous_reward: float = 0.0,
         done: bool = False,
-        agent_coordination_changes: list[str] | None = None,
     ) -> BaseManagerAction:
         observation = await self.create_observation(
             workflow=workflow,
@@ -252,7 +249,6 @@ class RandomManagerAgentV2(ManagerAgent):
             failed_task_ids=failed_task_ids,
             communication_service=communication_service,
             stakeholder_profile=stakeholder_profile,
-            agent_coordination_changes=agent_coordination_changes,
         )
         return await self.take_action(observation)
 
@@ -442,7 +438,6 @@ class OneShotDelegateManagerAgent(ManagerAgent):
         communication_service=None,
         previous_reward: float = 0.0,
         done: bool = False,
-        agent_coordination_changes: list[str] | None = None,
     ) -> BaseManagerAction:
         observation = await self.create_observation(
             workflow=workflow,
@@ -453,6 +448,5 @@ class OneShotDelegateManagerAgent(ManagerAgent):
             completed_task_ids=completed_task_ids,
             failed_task_ids=failed_task_ids,
             communication_service=communication_service,
-            agent_coordination_changes=agent_coordination_changes,
         )
         return await self.take_action(observation)

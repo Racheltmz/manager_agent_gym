@@ -46,8 +46,7 @@ class WorkflowRubric(BaseModel):
         description="LLM prompt to use for evaluation (0..max_score output)",
     )
     llm_model: str = Field(
-        default="o3",
-        description="LLM model name to use if llm_prompt is provided",
+        default="o3", description="LLM model name to use if llm_prompt is provided"
     )
 
     run_condition: RunCondition = Field(

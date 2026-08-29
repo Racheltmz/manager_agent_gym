@@ -11,7 +11,6 @@ from datetime import datetime
 
 from .interface import ManagerAgent
 from .prompts.structured_manager_prompts import (
-    ROSTER_TRADEOFF_LINE,
     STRUCTURED_MANAGER_SYSTEM_PROMPT_TEMPLATE,
 )
 from .action_constraints import build_context_constrained_action_schema
@@ -50,14 +49,11 @@ class ChainOfThoughtManagerAgent(ManagerAgent):
         model_name: str = "o3",
         action_classes: list[type[BaseManagerAction]] | None = None,
         manager_persona: str = "Strategic Project Manager",
-        include_roster_nudge: bool = True,
     ):
         super().__init__("structured_manager", preferences)
         self.model_name = model_name
         self.action_classes = action_classes or get_default_action_classes()
         self.manager_persona = manager_persona
-        # Whether to nudge the manager that newly-joined agents are eligible now.
-        self.include_roster_nudge = include_roster_nudge
 
     async def take_action(self, observation: ManagerObservation) -> BaseManagerAction:
         """
@@ -135,7 +131,6 @@ class ChainOfThoughtManagerAgent(ManagerAgent):
         communication_service=None,
         previous_reward: float = 0.0,
         done: bool = False,
-        agent_coordination_changes: list[str] | None = None,
     ) -> BaseManagerAction:
         observation = await self.create_observation(
             workflow=workflow,
@@ -146,7 +141,6 @@ class ChainOfThoughtManagerAgent(ManagerAgent):
             failed_task_ids=failed_task_ids,
             communication_service=communication_service,
             stakeholder_profile=stakeholder_profile,
-            agent_coordination_changes=agent_coordination_changes,
         )
         return await self.take_action(observation)
 
@@ -169,7 +163,6 @@ class ChainOfThoughtManagerAgent(ManagerAgent):
                     for i, agent in enumerate(available_agent_metadata)
                 ]
             ),
-            roster_tradeoff_line=ROSTER_TRADEOFF_LINE if self.include_roster_nudge else "",
         )
 
     def _prepare_context(self, observation: ManagerObservation) -> str:
@@ -281,28 +274,6 @@ class ChainOfThoughtManagerAgent(ManagerAgent):
             f"- all_resource_ids (count={len(observation.resource_ids)}): sample={[str(x) for x in observation.resource_ids[:preview_n]]}",
         ]
 
-        # Team roster changes applied this timestep (agent joins/removals).
-        # Omitted entirely when include_roster_nudge=False, to reproduce the
-        # prompt as it was before this section was introduced.
-        roster_changes_section = ""
-        if self.include_roster_nudge:
-            roster_change_lines = [
-                f"- {c}" for c in observation.roster_changes_this_timestep
-            ]
-            roster_changes_block = (
-                "\n".join(roster_change_lines)
-                if roster_change_lines
-                else "(no roster changes this timestep)"
-            )
-            roster_nudge_line = (
-                "Agents added this timestep are already included in Available Agents above and are eligible for assignment now; treat them as active candidates alongside existing agents rather than only considering agents used in prior timesteps."
-            )
-            roster_changes_section = (
-                f"### Team Roster Changes (this timestep)\n"
-                f"{roster_changes_block}\n"
-                f"{roster_nudge_line}\n\n"
-            )
-
         # Stakeholder profile (public data only)
         stakeholder_block = observation.stakeholder_profile.model_dump_json(indent=2)
 
@@ -335,7 +306,7 @@ class ChainOfThoughtManagerAgent(ManagerAgent):
 ### Task Status Counts
 - ready: {ready_count} | running: {running_count} | completed: {completed_count} | failed: {failed_count}
 
-{roster_changes_section}### ID Universes
+### ID Universes
 {id_guidance_lines}
 
 ### Performance Indicators
