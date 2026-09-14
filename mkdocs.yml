@@ -48,6 +48,8 @@ nav:
     - Architecture: TECHNICAL_ARCHITECTURE.md
     - Library Overview: LIBRARY_DOCUMENTATION.md
     - Docs How-To: dev/building-docs.md
+    - Open AHT Benchmark Plan: dev/open_aht_benchmark_plan.md
+    - Task Requirements Worked Example: dev/task_requirements_worked_example.md
   - Benchmarks: benchmark/
   - API Reference:
     - Systems:

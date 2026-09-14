@@ -24,17 +24,23 @@ Usage:
 
 from __future__ import annotations
 
+import importlib.util
+import inspect
 import json
 import re
+import textwrap
 from pathlib import Path
+from typing import Any
 
 import gradio as gr
 import matplotlib.pyplot as plt
 import pandas as pd
+from matplotlib.patches import FancyBboxPatch
 from matplotlib.ticker import MultipleLocator
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 OUT_ROOT = REPO_ROOT / "diagnostics" / "outputs"
+SCENARIOS_DIR = REPO_ROOT / "examples" / "end_to_end_examples"
 
 METRICS = [
     "weighted_preference_total",
@@ -609,6 +615,238 @@ def list_run_choices(df: pd.DataFrame, workflow: str | None) -> list[str]:
     return [f"{row.manager_mode} :: {row.run_dir}" for row in sub.itertuples()]
 
 
+DAG_ATOMIC_COLOR = "#E8F1FC"
+DAG_COMPOSITE_COLOR = "#BBD6FB"
+DAG_BORDER_COLOR = "#5B8DEF"
+
+
+def load_scenario_workflow(workflow: str | None) -> Any | None:
+    """Imports examples/end_to_end_examples/<workflow>/workflow.py and calls
+    its zero-arg workflow factory (create_workflow(), or whatever it's
+    locally named — see find_workflow_factory) to get the scenario's task
+    graph exactly as authored, before any execution. Pure/local: workflow.py
+    modules only build pydantic Task/Workflow objects, no LLM or network
+    calls — same approach docs/gen_benchmarks.py uses to render each
+    scenario's reference DAG."""
+    if not workflow:
+        return None
+    module_path = SCENARIOS_DIR / workflow / "workflow.py"
+    if not module_path.exists():
+        return None
+    try:
+        spec = importlib.util.spec_from_file_location(
+            f"_diagnostics_scenario_{workflow}", module_path
+        )
+        if spec is None or spec.loader is None:
+            return None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    except Exception:
+        return None
+    return find_workflow_factory(module)
+
+
+def find_workflow_factory(module: Any) -> Any | None:
+    """Heuristic borrowed from docs/gen_benchmarks.py: try the conventional
+    factory names first, then fall back to any zero-arg function with
+    "workflow" in its name (scenario naming isn't fully consistent — e.g.
+    tech_company_acquisition's factory is create_tech_acquisition_integration_workflow)."""
+    for name in ("create_workflow", "build_workflow", "make_workflow", "init_workflow"):
+        fn = getattr(module, name, None)
+        if callable(fn):
+            wf = _try_call_zero_arg(fn)
+            if getattr(wf, "tasks", None) is not None:
+                return wf
+    for name, fn in inspect.getmembers(module, inspect.isfunction):
+        if "workflow" in name.lower():
+            wf = _try_call_zero_arg(fn)
+            if getattr(wf, "tasks", None) is not None:
+                return wf
+    return None
+
+
+def _try_call_zero_arg(fn) -> Any | None:
+    try:
+        sig = inspect.signature(fn)
+        if any(
+            p.default is inspect.Parameter.empty
+            and p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+            for p in sig.parameters.values()
+        ):
+            return None
+        return fn()
+    except Exception:
+        return None
+
+
+def scenario_tasks_to_dict(wf: Any) -> dict:
+    """Flattens a scenario Workflow object's top-level tasks (the phase-level
+    breakdown — subtasks are nested underneath and not drawn as their own
+    nodes, matching docs/gen_benchmarks.py) into the plain-dict shape
+    build_workflow_dag_figure expects, annotated with each phase's subtask
+    count."""
+    tasks = getattr(wf, "tasks", None) or {}
+    out: dict = {}
+    for tid, t in tasks.items():
+        out[str(tid)] = {
+            "name": getattr(t, "name", str(tid)),
+            "dependency_task_ids": [
+                str(d) for d in (getattr(t, "dependency_task_ids", None) or [])
+            ],
+            "subtask_count": len(getattr(t, "subtasks", None) or []),
+        }
+    return out
+
+
+def _dag_layers(tasks: dict, deps: dict[str, list[str]]) -> dict[int, list[str]]:
+    """Longest-path layering via Kahn's algorithm: a task's layer is one more
+    than the deepest of its dependencies, 0 if it has none. Any leftover
+    nodes (a dependency cycle, which shouldn't happen for a real workflow)
+    are placed right after their deepest resolved dependency so the graph
+    still renders instead of erroring."""
+    children: dict[str, list[str]] = {tid: [] for tid in tasks}
+    indegree: dict[str, int] = {tid: len(deps[tid]) for tid in tasks}
+    for tid, dl in deps.items():
+        for d in dl:
+            children[d].append(tid)
+
+    layer: dict[str, int] = {}
+    queue = [tid for tid in tasks if indegree[tid] == 0]
+    for tid in queue:
+        layer[tid] = 0
+    while queue:
+        next_queue = []
+        for tid in queue:
+            for child in children[tid]:
+                layer[child] = max(layer.get(child, 0), layer[tid] + 1)
+                indegree[child] -= 1
+                if indegree[child] == 0:
+                    next_queue.append(child)
+        queue = next_queue
+
+    for tid in tasks:
+        if tid not in layer:
+            layer[tid] = max((layer.get(d, 0) for d in deps[tid]), default=0) + 1
+
+    layers: dict[int, list[str]] = {}
+    for tid, l in layer.items():
+        layers.setdefault(l, []).append(tid)
+    return layers
+
+
+def _order_layers(
+    layers: dict[int, list[str]], deps: dict[str, list[str]]
+) -> dict[int, list[str]]:
+    """Single left-to-right barycenter pass: orders each layer by the mean
+    position of each node's dependencies in the previous layer, to keep
+    dependency arrows from crossing more than they have to."""
+    ordered: dict[int, list[str]] = {}
+    max_layer = max(layers) if layers else 0
+    prev_pos: dict[str, float] = {}
+    for l in range(max_layer + 1):
+        nodes = sorted(layers.get(l, []))
+        if prev_pos:
+            def _barycenter(tid: str) -> float:
+                ps = [prev_pos[d] for d in deps[tid] if d in prev_pos]
+                return sum(ps) / len(ps) if ps else len(prev_pos)
+
+            nodes.sort(key=_barycenter)
+        ordered[l] = nodes
+        prev_pos = {tid: i for i, tid in enumerate(nodes)}
+    return ordered
+
+
+def build_workflow_dag_figure(tasks: dict, workflow: str | None = None):
+    """Renders the scenario's phase-level task-dependency graph as a
+    left-to-right DAG, one box per top-level task — this is the workflow as
+    authored (scenario_tasks_to_dict), not tied to any particular run.
+    Pure matplotlib (no graphviz/networkx dependency — graphviz also needs
+    the system `dot` binary, which isn't guaranteed to be installed
+    wherever this app runs)."""
+    if not tasks:
+        fig, ax = plt.subplots(figsize=(6, 2))
+        ax.set_axis_off()
+        ax.text(
+            0.5, 0.5, "No task graph available for this workflow\n"
+            "(couldn't import its scenario module or find a workflow factory)",
+            ha="center", va="center", transform=ax.transAxes,
+        )
+        return fig
+
+    deps = {
+        tid: [d for d in (t.get("dependency_task_ids") or []) if d in tasks]
+        for tid, t in tasks.items()
+    }
+    layers = _dag_layers(tasks, deps)
+    ordered = _order_layers(layers, deps)
+
+    n_layers = max(layers) + 1 if layers else 1
+    max_rows = max((len(v) for v in ordered.values()), default=1)
+
+    x_spacing, y_spacing = 3.2, 1.2
+    box_w, box_h = 2.7, 0.95
+
+    pos: dict[str, tuple[float, float]] = {}
+    for l, ids in ordered.items():
+        offset = (len(ids) - 1) / 2.0
+        for i, tid in enumerate(ids):
+            pos[tid] = (l * x_spacing, (offset - i) * y_spacing)
+
+    fig_w = max(6.0, min(n_layers * 2.6, 30.0))
+    fig_h = max(4.0, min(max_rows * 0.7, 28.0))
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h))
+
+    for tid in tasks:
+        x, y = pos[tid]
+        for d in deps[tid]:
+            dx, dy = pos[d]
+            ax.annotate(
+                "",
+                xy=(x - box_w / 2, y),
+                xytext=(dx + box_w / 2, dy),
+                arrowprops=dict(
+                    arrowstyle="-|>",
+                    color="#9aa5b1",
+                    lw=1.0,
+                    shrinkA=0,
+                    shrinkB=0,
+                    connectionstyle="arc3,rad=0.08",
+                ),
+                zorder=1,
+            )
+
+    for tid, t in tasks.items():
+        x, y = pos[tid]
+        subtask_count = t.get("subtask_count") or 0
+        color = DAG_COMPOSITE_COLOR if subtask_count else DAG_ATOMIC_COLOR
+        label = textwrap.fill(t.get("name") or tid, width=22)
+        if subtask_count:
+            label += f"\n({subtask_count} subtasks)"
+        box = FancyBboxPatch(
+            (x - box_w / 2, y - box_h / 2),
+            box_w,
+            box_h,
+            boxstyle="round,pad=0.02,rounding_size=0.08",
+            linewidth=1.2,
+            edgecolor=DAG_BORDER_COLOR,
+            facecolor=color,
+            zorder=2,
+        )
+        ax.add_patch(box)
+        ax.text(
+            x, y, label, ha="center", va="center",
+            fontsize=7, zorder=3, color="#1a1a1a",
+        )
+
+    ax.set_xlim(-box_w, n_layers * x_spacing)
+    ax.set_ylim(-(max_rows / 2 + 1) * y_spacing, (max_rows / 2 + 1) * y_spacing)
+    ax.set_axis_off()
+    title = f"Workflow Task Graph — {workflow}" if workflow else "Workflow Task Graph"
+    ax.set_title(f"{title} ({len(tasks)} phases, as defined)", fontsize=11)
+    fig.tight_layout()
+    return fig
+
+
 ALL_VARIANTS = "All variants"
 MAIN_VARIANT = "main"
 
@@ -742,6 +980,16 @@ with gr.Blocks(title="Manager Agent Gym — Eval Dashboard") as demo:
             ),
         )
 
+    gr.Markdown(
+        "## Workflow Task Graph\n"
+        "The scenario's task-dependency DAG exactly as defined in "
+        "`examples/end_to_end_examples/<workflow>/workflow.py`, before any "
+        "execution — phase-level tasks with dependency arrows, darker boxes "
+        "have subtasks underneath. Independent of any run: this is what the "
+        "workflow needs, not how a given run went."
+    )
+    dag_plot = gr.Plot(label="Workflow task graph (DAG)")
+
     table = gr.Dataframe(label="Metrics by manager mode", interactive=False)
 
     # gr.BarPlot only stacks when a color column is used (no grouped/dodged
@@ -804,6 +1052,9 @@ with gr.Blocks(title="Manager Agent Gym — Eval Dashboard") as demo:
         return df, joins_df, failed_df, dd_update, variant_dd_update
 
     def on_workflow_change(df, joins_df, failed_df, workflow, mid_episode_only):
+        scenario_wf = load_scenario_workflow(workflow)
+        dag_figure = build_workflow_dag_figure(scenario_tasks_to_dict(scenario_wf), workflow)
+
         sub = filter_workflow(df, workflow)
         figure = make_combined_figure(sub)
 
@@ -832,12 +1083,13 @@ with gr.Blocks(title="Manager Agent Gym — Eval Dashboard") as demo:
         run_choices = list_run_choices(df, workflow)
         run_dd_update = gr.update(choices=run_choices, value=run_choices[0] if run_choices else None)
 
-        return sub, figure, ns_figure, agg, wf_joins, wf_failed, run_dd_update
+        return dag_figure, sub, figure, ns_figure, agg, wf_joins, wf_failed, run_dd_update
 
     workflow_dropdown.change(
         on_workflow_change,
         inputs=[state_df, joins_state, failed_state, workflow_dropdown, mid_episode_only_checkbox],
         outputs=[
+            dag_plot,
             table,
             combined_plot,
             nonstationarity_plot,
@@ -852,6 +1104,7 @@ with gr.Blocks(title="Manager Agent Gym — Eval Dashboard") as demo:
         on_workflow_change,
         inputs=[state_df, joins_state, failed_state, workflow_dropdown, mid_episode_only_checkbox],
         outputs=[
+            dag_plot,
             table,
             combined_plot,
             nonstationarity_plot,
@@ -863,6 +1116,7 @@ with gr.Blocks(title="Manager Agent Gym — Eval Dashboard") as demo:
     )
 
     workflow_change_outputs = [
+        dag_plot,
         table,
         combined_plot,
         nonstationarity_plot,
