@@ -47,9 +47,12 @@ nav:
     - Quick Start: QUICK_START_GUIDE.md
     - Architecture: TECHNICAL_ARCHITECTURE.md
     - Library Overview: LIBRARY_DOCUMENTATION.md
-    - Docs How-To: dev/building-docs.md
-    - Open AHT Benchmark Plan: dev/open_aht_benchmark_plan.md
-    - Task Requirements Worked Example: dev/task_requirements_worked_example.md
+    - Docs How-To: benchmark_aht/building-docs.md
+    - Open AHT Benchmark:
+        - Overview: benchmark_aht/index.md
+        - Converting a Scenario to AHT: benchmark_aht/benchmark_conversion.md
+        - Autoscaling Team Churn: benchmark_aht/autoscaling_team_churn.md
+    - Task Requirements Worked Example: benchmark_aht/task_requirements_worked_example.md
   - Benchmarks: benchmark/
   - API Reference:
     - Systems:

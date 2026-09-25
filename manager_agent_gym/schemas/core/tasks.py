@@ -3,10 +3,28 @@ Task data models for Manager Agent Gym.
 """
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID, uuid4
 from pydantic import BaseModel, Field
 
 from .base import TaskStatus
+
+
+class TaskRequirement(BaseModel):
+    """
+    One deterministically-gradable checklist item on a Task, used to demonstrate
+    (not assert) that the worker assigned to the task had the right trait tuple.
+    See docs/benchmark_aht/open_aht_benchmark_plan_prev.md §3.2 — check is deliberately
+    deterministic-only, no llm_classifier option: the task can be hard, but the
+    check must be cheap/exact (string match, count, number comparison).
+    """
+
+    key: str = Field(..., description="Short identifier, e.g. 'id_verification_flow'")
+    description: str = Field(..., description="What this checklist item verifies")
+    check: Literal["deterministic"] = Field(
+        default="deterministic",
+        description="Grading mode — deterministic only, never an LLM call.",
+    )
 
 
 class Task(BaseModel):
@@ -79,6 +97,25 @@ class Task(BaseModel):
     )
     quality_score: float | None = Field(
         default=None, description="Quality assessment [0,1]"
+    )
+
+    # AHT-benchmark fields (docs/benchmark_aht/open_aht_benchmark_plan_prev.md §3.2). Empty/None by
+    # default so existing scenarios and the manager-facing observation are unaffected —
+    # `requirements` is never read by the manager, only by the requirements evaluator (§4).
+    requirements: list[TaskRequirement] = Field(
+        default_factory=list,
+        description="Deterministic checklist demonstrating worker trait-tuple fit.",
+    )
+    requirements_pass_threshold: int | None = Field(
+        default=None,
+        description="Minimum number of `requirements` that must pass for completion credit.",
+    )
+    objective: Literal["objective_1", "objective_2"] | None = Field(
+        default=None,
+        description=(
+            "Which AHT benchmark objective this task tests, purely for grouping "
+            "results after scoring — never read by the grader or the manager."
+        ),
     )
 
     # Timestamps

@@ -631,7 +631,7 @@ Available manager actions:
 - **Research Paper**: https://arxiv.org/abs/2510.02557
 - **API Documentation**: Generated reference in `docs/api/`
 - **Architecture Guide**: Technical details in `docs/TECHNICAL_ARCHITECTURE.md`
-- **Research Guide**: Implementation guide in `docs/dev/building-docs.md`
+- **Research Guide**: Implementation guide in `docs/benchmark_aht/building-docs.md`
 
 ---
 

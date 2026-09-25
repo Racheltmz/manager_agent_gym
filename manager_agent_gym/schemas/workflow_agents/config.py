@@ -17,6 +17,27 @@ class AgentConfig(BaseModel):
     system_prompt: str = Field(..., description="System instructions for the agent")
     model_name: str = Field(default="gpt-4.1", description="LLM model to use")
 
+    # Trait tuple (model_name, model_version, capability_tier) — see
+    # docs/benchmark_aht/open_aht_benchmark_plan_prev.md §3.1. Both default to None/"latest" so existing
+    # scenarios that never set these keep constructing exactly as before.
+    model_version: str = Field(
+        default="latest",
+        description=(
+            "Declared model version, where distinct from model_name (trait-tuple "
+            "component #2). Defaults to 'latest' when model_name already fully "
+            "identifies the version, e.g. 'gpt-4o'."
+        ),
+    )
+    capability_tier: str | None = Field(
+        default=None,
+        description=(
+            "Declared capability tier for this agent, e.g. 'reasoning', 'fast', "
+            "'extraction' (trait-tuple component #3). None means undeclared — "
+            "existing scenarios that don't participate in trait-tuple-based "
+            "benchmarks leave this unset."
+        ),
+    )
+
     agent_description: str = Field(..., description="Description of the agent")
     agent_capabilities: list[str] = Field(..., description="Capabilities of the agent")
 

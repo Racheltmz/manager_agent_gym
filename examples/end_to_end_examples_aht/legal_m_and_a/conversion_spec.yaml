@@ -1,0 +1,369 @@
+# ==============================================================================
+# Filled instance of docs/benchmark_aht/benchmark_conversion_template.yaml for legal_m_and_a.
+# Reflects exactly what's implemented in workflow.py / team.py / preferences.py in this
+# folder — verified by construction (see: python -c "from examples.end_to_end_examples_aht
+# .legal_m_and_a import create_workflow, create_team_timeline, create_legal_mna_team_configs"
+# imports and constructs without error).
+#
+# NOT done in this pass, deliberately deferred (see verification_checklist /
+# open_questions): task_requirements_evaluator.py (the actual checker-function registry
+# that grades requirements_catalog items), and wiring it into common_evaluators.py /
+# run_examples.py — those touch shared engine call sites used by every scenario and
+# deserve their own explicit go-ahead before editing.
+#
+# Revision: expanded from 2 to 4 graded checkpoints per episode (2x objective_1, 2x
+# objective_2) — a single episode with only one Objective-1/2 pair was too little signal
+# per run. T9's split also resolves the single-assignee/two-specialty ambiguity that
+# MANAGER_WALKTHROUGH.md §3.4 flagged as unresolved (a bonus of splitting it, not the
+# primary reason). A 5th candidate (P_regulatory_reasoning's T7->T12 pair, same
+# same-tuple/non-adjacent shape as T8->T13) was identified but deliberately not added —
+# stopping at 4 per the explicit ask, flagged in open_questions for a future pass.
+# ==============================================================================
+
+scenario:
+  name: "legal_m_and_a"
+  source_workflow_file: "examples/end_to_end_examples/legal_m_and_a/workflow.py"
+  source_team_file: "examples/end_to_end_examples/legal_m_and_a/team.py"
+  source_preferences_file: "examples/end_to_end_examples/legal_m_and_a/preferences.py"
+  baseline_reference_doc: "examples/end_to_end_examples/legal_m_and_a/WORKFLOW_MAP.md"
+  status: grafted   # audit done, pools defined, grafts done, timeline derived — baseline not yet re-run (needs explicit ask per CLAUDE.md)
+
+human_role_audit:
+  - role: senior_mna_associate
+    decision: convert
+    rationale: "Pure knowledge work (drafts SPA sections, coordinates schedules, runs diligence calls) — no sign-off/authority language."
+    tasks_affected: ["T1", "T3", "T5"]
+    covered_by: "senior_associate_ai (P_diligence_extraction)"
+  - role: regulatory_counsel
+    decision: convert
+    rationale: "Advisory/analysis work (HSR strategy, remedies, jurisdiction sequencing) — no personal sign-off authority."
+    tasks_affected: ["T7", "T12"]
+    covered_by: "regulatory_strategist_ai (P_regulatory_reasoning)"
+  - role: ip_counsel
+    decision: convert
+    rationale: "Primary verbs are validate/draft; 'approves IP covenants' language judged non-load-bearing. Central to the T6 split."
+    tasks_affected: ["T6 (now T6b)"]
+    covered_by: "ip_counsel_ai (P_privacy_reasoning)"
+  - role: privacy_counsel
+    decision: convert
+    rationale: "Pure analysis work (assesses DPAs, transfers, security posture). Central to the T6 split."
+    tasks_affected: ["T6 (now T6b)"]
+    covered_by: "privacy_counsel_ai (P_privacy_reasoning)"
+  - role: finance_counsel
+    decision: convert
+    rationale: "Knowledge/coordination work (aligns debt papers, drafts solvency certs) — no personal authority."
+    tasks_affected: ["T4", "T9", "T13"]
+    covered_by: "finance_counsel_ai (P_closing_ops_fast)"
+  - role: tax_partner
+    decision: convert
+    rationale: "Advisory work; 'bring-down tax confirmations' at t=55 in the original overlaps tax_structuring_ai's domain — same-tuple reuse pattern, deliberately kept."
+    tasks_affected: ["T8", "T13 (bring-down)"]
+    covered_by: "tax_partner_ai (P_structure_tax_reasoning)"
+  - role: lead_mna_partner
+    decision: drop
+    rationale: "Core identity is sign-off authority ('signs legal positions and escalations'); drafting-strategy overlap already covered by deal_counsel_ai/redline_explainer, authority overlap covered by the stakeholder object."
+    tasks_affected: ["T1", "T2", "T11"]
+    covered_by: "acquirer_gc_stakeholder (authority) + deal_counsel_ai/redline_explainer (drafting) + project_coordinator (T2 tracking)"
+  - role: employment_counsel
+    decision: drop
+    rationale: "Orphan — maps to no task in workflow.py (confirmed in WORKFLOW_MAP.md §4); nothing to convert for."
+    tasks_affected: []
+    covered_by: ""
+  - role: rwi_broker
+    decision: drop
+    rationale: "Never scheduled in the original team_timeline at all (confirmed in WORKFLOW_MAP.md §4); functionally duplicated by rwi_packager (AI)."
+    tasks_affected: ["T9"]
+    covered_by: "rwi_packager (already AI, P_closing_ops_fast)"
+  - role: acquirer_gc
+    decision: drop
+    rationale: "'Confirms governance/approvals,' 'grants final sign-offs' — redundant with the existing acquirer_gc_stakeholder StakeholderConfig."
+    tasks_affected: ["T2", "T14"]
+    covered_by: "acquirer_gc_stakeholder + project_coordinator (T2/T14 tracking)"
+  - role: acquirer_cfo
+    decision: drop
+    rationale: "'Approves funds-flow and WC mechanics' — approval authority; knowledge-work overlap already covered by finance_counsel_ai/funds_flow_coordinator."
+    tasks_affected: ["T4", "T9", "T14"]
+    covered_by: "finance_counsel_ai + funds_flow_coordinator"
+  - role: target_ceo
+    decision: drop
+    rationale: "Functions as an external (target-side) counterparty/approver, not a task-executing worker on the acquirer's deal team."
+    tasks_affected: ["T15"]
+    covered_by: "project_coordinator (customer/employee comms tracking, if needed)"
+
+trait_pool_deltas:
+  - tuple_name: "privacy_reasoning_gpt4o"
+    model: "gpt-4o"
+    model_version: "latest"
+    capability_tier: "privacy_reasoning"
+    reason_needed: "T6a/T6b must be structurally distinct pools — reusing reasoning_gpt4o for both would make the split non-discriminating."
+
+pools:
+  - pool_name: "P_intake_orchestration"
+    trait_tuple: "fast_gpt4o_mini"
+    member_agent_ids: ["project_coordinator"]
+    feeds_tasks: ["T1", "T2", "T15"]
+    demand_policy:
+      join_trigger: "T1 ready at t=0"
+      cold_start_bundle: ["T1", "T2", "T15"]
+      leave_condition: "never removed — bundle spans the full run (T15 is the last task)"
+
+  - pool_name: "P_diligence_extraction"
+    trait_tuple: "extraction_gpt4o"
+    member_agent_ids: ["diligence_reader", "senior_associate_ai", "schedules_builder"]
+    feeds_tasks: ["T3", "T4", "T5", "T10"]
+    demand_policy:
+      join_trigger: "diligence_reader: T3 about to be ready at t=0 (T1 clearing). schedules_builder: T10 schedule-assembly demand ahead of readiness at t=12. senior_associate_ai: T10 SPA-drafting co-demand once T10 is actually ready at t=25 — a NEW demand event, not a hand-off from diligence_reader's departure at t=18."
+      cold_start_bundle: ["diligence_reader -> T3, T4, T5 (one bundle, joined together at t=0)", "schedules_builder -> T10 (from t=12)", "senior_associate_ai -> T10 (from t=25)"]
+      leave_condition: "diligence_reader removed at t=18 only once T3+T4+T5 are all COMPLETED and T10 (the only other consumer) is not yet ready. schedules_builder and senior_associate_ai are never removed."
+
+  - pool_name: "P_deal_drafting_reasoning"
+    trait_tuple: "reasoning_gpt4o"
+    member_agent_ids: ["deal_counsel_ai", "redline_explainer"]
+    feeds_tasks: ["T6a", "T10", "T11"]
+    demand_policy:
+      join_trigger: "deal_counsel_ai: T6a/T10 demand ahead of readiness at t=0. redline_explainer: T11 demand ahead of readiness at t=12."
+      cold_start_bundle: ["deal_counsel_ai -> T6a, T10", "redline_explainer -> T11"]
+      leave_condition: "redline_explainer removed at t=45 only once T11 is COMPLETED and nothing ready still needs the redline specialty specifically. deal_counsel_ai is never removed (its bundle runs through the rest of the drafting workstream)."
+
+  - pool_name: "P_privacy_reasoning"
+    trait_tuple: "privacy_reasoning_gpt4o"
+    member_agent_ids: ["ip_counsel_ai", "privacy_counsel_ai"]
+    feeds_tasks: ["T6b", "T13b"]
+    demand_policy:
+      join_trigger: "T6b demand begins at t=6"
+      cold_start_bundle: ["T6b", "T13b"]
+      leave_condition: "never removed — bundle explicitly includes T13b, so it can't be 'complete' until after the Objective-2 reuse task executes; this persistence is the entire mechanism the reuse test depends on"
+
+  - pool_name: "P_regulatory_reasoning"
+    trait_tuple: "reasoning_gpt4o"
+    member_agent_ids: ["antitrust_analyst", "cfius_analyst", "regulatory_strategist_ai"]
+    feeds_tasks: ["T7", "T12"]
+    demand_policy:
+      join_trigger: "antitrust_analyst/regulatory_strategist_ai: T7 demand begins at t=6 (bundle also covers T12 up front). cfius_analyst: CFIUS-specific demand at t=18 as T12 approaches."
+      cold_start_bundle: ["antitrust_analyst -> T7, T12", "regulatory_strategist_ai -> T7, T12", "cfius_analyst -> T12"]
+      leave_condition: "antitrust_analyst removed at t=55 only once T7+T12 are both COMPLETED (filings submitted). regulatory_strategist_ai and cfius_analyst are never removed."
+
+  - pool_name: "P_structure_tax_reasoning"
+    trait_tuple: "reasoning_gpt4o"
+    member_agent_ids: ["tax_structuring_ai", "tax_partner_ai"]
+    feeds_tasks: ["T8", "T13"]
+    demand_policy:
+      join_trigger: "tax_structuring_ai: T8 demand ahead of readiness at t=6. tax_partner_ai: fresh demand from T13's bring-down at t=45 — NOT a replacement for tax_structuring_ai, whose departure at t=25 was already independently complete."
+      cold_start_bundle: ["tax_structuring_ai -> T8 (only)", "tax_partner_ai -> T13 bring-down (only)"]
+      leave_condition: "tax_structuring_ai removed at t=25 only once T8 is COMPLETED and nothing ready yet needs structure/tax again (T13 bring-down demand is much later). tax_partner_ai is never removed."
+
+  - pool_name: "P_debt_commitment_fast"
+    trait_tuple: "fast_gpt4o_mini"
+    member_agent_ids: ["finance_counsel_ai"]
+    feeds_tasks: ["T9a"]
+    demand_policy:
+      join_trigger: "debt-commitment/financing-coordination demand ahead of readiness at t=12"
+      cold_start_bundle: ["finance_counsel_ai -> T9a (only)"]
+      leave_condition: "never removed — bundle runs through the end of the scenario"
+
+  - pool_name: "P_rwi_ops_fast"
+    trait_tuple: "fast_gpt4o_mini"
+    member_agent_ids: ["rwi_packager"]
+    feeds_tasks: ["T9b"]
+    demand_policy:
+      join_trigger: "RWI underwriting-coordination demand at t=18"
+      cold_start_bundle: ["rwi_packager -> T9b (only)"]
+      leave_condition: "never removed — bundle runs through the end of the scenario"
+
+  - pool_name: "P_closing_ops_fast"
+    trait_tuple: "fast_gpt4o_mini"
+    member_agent_ids: ["funds_flow_coordinator", "closing_checklist_manager"]
+    feeds_tasks: ["T13", "T14"]
+    demand_policy:
+      join_trigger: "funds_flow_coordinator: T13 funds-flow demand at t=25. closing_checklist_manager: T13/T14 demand at t=45."
+      cold_start_bundle: ["funds_flow_coordinator -> T13", "closing_checklist_manager -> T13, T14"]
+      leave_condition: "none removed — every bundle here runs through the end of the scenario"
+
+task_graph:
+  unchanged_tasks: ["T1", "T2", "T3", "T4", "T5", "T7", "T8", "T10", "T11", "T12", "T13", "T14", "T15"]
+  # NOTE: template's objective_1/objective_2 are singular; this scenario now has two of each
+  # (the "at least 4 checkpoints per episode" revision), so both are lists here.
+  grafts:
+    objective_1:
+      - split_task: "T6 (Legal Diligence – Material Contracts, IP, & Privacy)"
+        new_subtasks:
+          - id: "3005 (UUID(int=3005))"
+            name: "Contract Terms Review"
+            pool: "P_deal_drafting_reasoning"
+            requirements: ["contract_terms_indemnity_covenant_cited", "contract_terms_termination_mechanics_cited"]
+          - id: "3006 (UUID(int=3006))"
+            name: "IP & Privacy Compliance Review"
+            pool: "P_privacy_reasoning"
+            requirements: ["ip_chain_of_title_cited", "privacy_dpa_cross_border_cited"]
+      - split_task: "T9 (Financing Workstream (Debt/RWI)) — split added in the 4-checkpoint revision, also resolves the single-assignee/two-specialty ambiguity MANAGER_WALKTHROUGH.md §3.4 flagged as unresolved"
+        new_subtasks:
+          - id: "3009 (UUID(int=3009))"
+            name: "Debt Commitment Review"
+            pool: "P_debt_commitment_fast"
+            requirements: ["debt_intercreditor_terms_cited", "debt_solvency_certificate_cited"]
+          - id: "3017 (UUID(int=3017))"
+            name: "RWI Insurance Packaging"
+            pool: "P_rwi_ops_fast"
+            requirements: ["rwi_exclusions_reconciled_cited", "rwi_risk_allocation_cited"]
+    objective_2:
+      - reuse_task:
+          id: "3014 (UUID(int=3014))"
+          name: "Post-Signing Privacy/IP Bring-Down"
+          graft_point: "after T13 (Closing Mechanics & Bring-Down Diligence)"
+          reuses_pool: "P_privacy_reasoning"
+          requirements: ["bring_down_privacy_ip_reconfirmed"]
+      - reuse_task:
+          id: "3018 (UUID(int=3018))"
+          name: "Post-Signing Tax Position Reconfirmation"
+          graft_point: "after T13 (Closing Mechanics & Bring-Down Diligence)"
+          reuses_pool: "P_structure_tax_reasoning"
+          requirements: ["tax_election_and_earnout_reconfirmed"]
+          note: "Formalizes the T8->T13-bring-down pattern already noted as an unformalized 'bonus pattern' in AHT_DIFF.md — tax_partner_ai already joins at t=45 for exactly this purpose; this task just makes it gradable. Name deliberately avoids 'Bring-Down' (T13b's name independently leaks its own checklist answer per MANAGER_WALKTHROUGH.md §3.3 — not repeating that mistake here)."
+
+requirements_catalog:
+  - key: "contract_terms_indemnity_covenant_cited"
+    task: "Contract Terms Review (T6a)"
+    description: "Output resource text contains 'indemnif' and 'covenant'."
+    check: deterministic
+    check_fn_name: "PENDING — task_requirements_evaluator.py not yet built"
+    discriminates_pool: "P_deal_drafting_reasoning"
+  - key: "contract_terms_termination_mechanics_cited"
+    task: "Contract Terms Review (T6a)"
+    description: "Output resource text contains 'termination'."
+    check: deterministic
+    check_fn_name: "PENDING"
+    discriminates_pool: "P_deal_drafting_reasoning"
+  - key: "ip_chain_of_title_cited"
+    task: "IP & Privacy Compliance Review (T6b)"
+    description: "Output resource text contains 'chain-of-title' or 'chain of title', and 'OSS'."
+    check: deterministic
+    check_fn_name: "PENDING"
+    discriminates_pool: "P_privacy_reasoning"
+  - key: "privacy_dpa_cross_border_cited"
+    task: "IP & Privacy Compliance Review (T6b)"
+    description: "Output resource text contains 'DPA' or 'data processing agreement', and 'cross-border'."
+    check: deterministic
+    check_fn_name: "PENDING"
+    discriminates_pool: "P_privacy_reasoning"
+  - key: "bring_down_privacy_ip_reconfirmed"
+    task: "Post-Signing Privacy/IP Bring-Down (T13b)"
+    description: "Output resource text contains 'bring-down' and ('privacy' or 'IP')."
+    check: deterministic
+    check_fn_name: "PENDING"
+    discriminates_pool: "P_privacy_reasoning"
+  - key: "debt_intercreditor_terms_cited"
+    task: "Debt Commitment Review (T9a)"
+    description: "Output resource text contains 'intercreditor'."
+    check: deterministic
+    check_fn_name: "PENDING"
+    discriminates_pool: "P_debt_commitment_fast"
+  - key: "debt_solvency_certificate_cited"
+    task: "Debt Commitment Review (T9a)"
+    description: "Output resource text contains 'solvency'."
+    check: deterministic
+    check_fn_name: "PENDING"
+    discriminates_pool: "P_debt_commitment_fast"
+  - key: "rwi_exclusions_reconciled_cited"
+    task: "RWI Insurance Packaging (T9b)"
+    description: "Output resource text contains 'exclusion'."
+    check: deterministic
+    check_fn_name: "PENDING"
+    discriminates_pool: "P_rwi_ops_fast"
+  - key: "rwi_risk_allocation_cited"
+    task: "RWI Insurance Packaging (T9b)"
+    description: "Output resource text contains 'risk allocation'."
+    check: deterministic
+    check_fn_name: "PENDING"
+    discriminates_pool: "P_rwi_ops_fast"
+  - key: "tax_election_and_earnout_reconfirmed"
+    task: "Post-Signing Tax Position Reconfirmation (T13c)"
+    description: "Output resource text contains ('338(h)(10)' or '336(e)') and ('rollover' or 'earnout')."
+    check: deterministic
+    check_fn_name: "PENDING"
+    discriminates_pool: "P_structure_tax_reasoning"
+
+task_requirements_pass_threshold:
+  - task: "T6a"
+    threshold: 2
+  - task: "T6b"
+    threshold: 2
+  - task: "T9a"
+    threshold: 2
+  - task: "T9b"
+    threshold: 2
+  - task: "T13b"
+    threshold: 1
+  - task: "T13c"
+    threshold: 1
+
+derived_team_timeline:
+  method: offline_static   # CONFIRMED as the correct target, not a stopgap — see docs/benchmark_aht/benchmark_conversion.md
+  derivation_notes: >
+    Baked into team.py::create_team_timeline() as a fixed dict, reusing the original
+    scenario's 0/6/12/18/25/45/55 cadence where it lines up with when a specialty's demand
+    window actually opens or a prior cold-start bundle actually completes (checked against
+    each task's estimated_duration_hours, not just "a later timestep exists"). Not computed
+    live at runtime — by design: the schedule must be independent of the manager's own
+    decisions to count as externally-triggered non-stationarity (a live ready-task-count
+    signal would be manager-reactive, since task completion timing depends on assignment
+    quality, which defeats the point of testing adaptation to change the manager doesn't
+    control). Derived from shared dependency structure (e.g. T6a/T6b's pools both become
+    needed at t=6 because they share a dependency on T3), not from task identity, which is
+    what keeps join/leave timing from telegraphing which agent is "meant for" which task.
+    Every join is a one-shot cold-start bundle (rule 1) and every remove is gated on that
+    bundle's completion plus no current need (rule 2) — see docs/benchmark_aht/index.md
+    "Two design rules." Fixed in this revision: diligence_reader no longer hands its T4/T5
+    work to senior_associate_ai on departure (t=12 in the prior version) — it now keeps the
+    whole T3+T4+T5 bundle to completion and leaves at t=18 once genuinely done; and
+    tax_structuring_ai no longer leaves the same timestep (t=18) it was assigned T8 — it now
+    leaves at t=25, after T8 completes.
+  events: "see team.py::create_team_timeline() — 21 events across 7 timesteps, verified by construction"
+
+state_action_scoring_mapping:
+  state_shape: >
+    s = <G, W, C, X, U> — unchanged (symbols as defined in the base MA-Gym POSG
+    formalization). W restructured into the 7 pools above. There is no load/capacity
+    quantity computed anywhere — the engine has no per-agent concurrency limit
+    (manager_agent_gym/core/execution/engine.py starts every ready task with an assigned
+    agent concurrently regardless of what else that agent is running), so pool membership
+    tracks which specialty is needed, not how many units of it exist.
+  action_space: "Unchanged — no new manager-facing action added."
+  transition_rule: >
+    Join: when a task needs a specialty not already covered by an unfinished bundle on the
+    roster, add one agent of that pool's trait tuple, cold-start-guessed onto every task in
+    that demand window at once (rule 1). Leave: remove that agent only once every task in its
+    bundle is COMPLETED and no ready task still needs the pool (rule 2). No load-driven
+    scale-in, no injected failure, no hand-off to a different specialist mid-bundle exists in
+    this build.
+  episode_and_scoring: >
+    Unchanged mechanically, but requirements_met/task_credit grading is NOT YET WIRED —
+    requirements are declared on T6a/T6b/T13b (schema-level) but no evaluator reads them
+    yet. See verification_checklist and open_questions.
+
+preferences_audit:
+  rubrics_referencing_dropped_roles: []   # confirmed empty — no rubric ever referenced an agent_id by name
+  rubrics_needing_review:
+    - "rule_disclosure_schedules_evidence_linked — FIXED in this pass (was matching 'Material Contracts', now matches both T6a/T6b names)"
+    - "employment_matters_review (goal_achievement) — orphan rubric, no corresponding task exists in either the original or this variant; not fixed, flagged only"
+    - "ip_portfolio_analysis (goal_achievement) — LLM-prompt based, not name-matching, unaffected by the T6 split but worth a content review given T6b now exists as a dedicated task"
+
+verification_checklist:
+  - item: "Custom aggregation callable on a non-empty-rubric-list Evaluator actually runs (task_credit threshold logic, not silent averaging)"
+    status: unverified
+  - item: "No preferences.py rubric references an agent_id dropped in human_role_audit"
+    status: confirmed_working   # verified directly — no rubric in this file references any agent_id
+  - item: "Every pool's remove event timestep is strictly after every task in its cold_start_bundle would plausibly be COMPLETED, and no ready task at that timestep still needs the pool (rule 2)"
+    status: confirmed_working   # verified by hand against workflow.py's estimated_duration_hours and dependency_task_ids when the timeline was rewritten: diligence_reader (t=18, after T3/T4/T5), tax_structuring_ai (t=25, after T8, moved off the t=18 assignment-coincident timestep), redline_explainer (t=45, after T11), antitrust_analyst (t=55, after T7+T12)
+  - item: "No remove event hands a departing agent's unfinished work to a different agent (rule 1)"
+    status: confirmed_working   # verified by hand: senior_associate_ai's join (t=25) is tied to T10's own readiness, not to diligence_reader's departure (t=18) — the two events are independent and diligence_reader's bundle is already complete before senior_associate_ai ever joins
+  - item: "No team_timeline join/leave reason string names a specific task ID (rule 3) — reasons describe specialty/capability demand only; task-to-agent fit is verified here, in this file, not asserted in code"
+    status: confirmed_working   # verified directly: grep for task-ID patterns ("T<digit>") inside team.py's reason-string literals returns zero matches after the rule-3 rewrite
+
+open_questions:
+  - "CLOSED: T9's finance_counsel_ai-vs-rwi_packager double-claim (surfaced while auditing rule 3). Resolved by splitting T9 into T9a (Debt Commitment Review, P_debt_commitment_fast) / T9b (RWI Insurance Packaging, P_rwi_ops_fast) — the same fix as T6, and now checkpoint 2 of 4. T10's analogous double-claim (schedules_builder vs. deal_counsel_ai/senior_associate_ai) was resolved by reasoning, not by splitting — MANAGER_WALKTHROUGH.md §3.4 shows senior_associate_ai's profile covers both of T10's clauses, so it's not actually ambiguous; deal_counsel_ai's stale T10 claim in team.py's comment is cosmetic and could be cleaned up but doesn't affect anything since T10 has no requirements checklist."
+  - "5th checkpoint candidate identified but NOT added, per the explicit ask to stop at 4: P_regulatory_reasoning's T7->T12 pair is the same same-tuple/non-adjacent shape as T8->T13 (now T13c) — antitrust_analyst/regulatory_strategist_ai already bundle both from t=6. Would need a requirements checklist on T12 to formalize, same pattern as T13c."
+  - "task_requirements_evaluator.py (requirements_met/task_credit) not built — requirements_catalog items have no grading function yet."
+  - "common_evaluators.py / run_examples.py not touched — build_default_evaluators() still has no workflow parameter, so the requirements evaluator (once built) has nowhere to attach yet."
+  - "CLOSED: offline_static vs runtime_dynamic. Resolved in favor of offline_static — a live ready-task-count signal would be manager-reactive (task completion timing depends on assignment quality), which disqualifies it as externally-triggered non-stationarity. No engine change needed; team.py's existing implementation already matches the decided design."
+  - "CLOSED: load/capacity vs demand-driven churn. Resolved in favor of demand-driven — the engine has no per-agent concurrency limit, so a capacity threshold was never enforced. team.py rewritten to key joins/leaves on specialty need and bundle completion instead."
+  - "Baseline diagnostic re-run against this variant requires scripts/run.sh, which calls the OpenAI API — NOT run in this pass per CLAUDE.md; needs an explicit, separate ask."

@@ -1,6 +1,6 @@
 # Task Requirements Checklist: Worked Example
 
-Companion to `docs/dev/open_aht_benchmark_plan.md` §3.2/§4. That doc describes the
+Companion to `open_aht_benchmark_plan_prev.md` §3.2/§4. That doc describes the
 `Task.requirements` mechanism at a design level; this doc traces one concrete task through
 every layer — schema, per-item grading, aggregation, wiring — using the real MA-Gym classes
 plus the proposed additions, so the connections between them are unambiguous before any code
@@ -107,4 +107,4 @@ Depends on the item's `check` mode, and even then it's narrow:
 Either way, **no LLM ever decides "was the right agent assigned."** That inference is a
 byproduct of the binary aggregation step (§ counting passes vs. `requirements_pass_threshold`),
 which is always plain code — consistent with the "no gold label, fit is demonstrated not
-asserted" design in `open_aht_benchmark_plan.md`.
+asserted" design in `open_aht_benchmark_plan_prev.md`.

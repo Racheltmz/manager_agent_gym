@@ -1,0 +1,190 @@
+# ==============================================================================
+# Benchmark Conversion Template — Enterprise MAS + Demand-Driven Team Churn
+# ==============================================================================
+# One filled copy of this template = one scenario's conversion spec, per the
+# procedure in benchmark_conversion.md ("The generic 6-step procedure" and
+# "Team-churn generation: demand-driven roster, not capacity autoscaling"),
+# worked out concretely in autoscaling_team_churn.md.
+#
+# Three design rules every filled copy must satisfy (index.md "Two design rules" — the doc
+# section header predates rule 3, not yet renumbered there):
+#   1. No reassignment-on-leave — a cold-start join bundles ALL plausibly-matching
+#      upcoming tasks onto one agent at once; that agent is never pulled off the
+#      bundle mid-way to be replaced by a different specialist.
+#   2. An agent's `remove` event may only fire once every task assigned to it is
+#      COMPLETED and no task ready at that timestep still needs its specialty.
+#   3. A team_timeline join/leave reason string never names a task ID — it names the
+#      specialty/capability demand only ("debt-commitment demand opens," not "for T9").
+#      Which task a specialty actually serves is verified separately, in THIS file
+#      (pools[].demand_policy below), not asserted in team.py's reason strings — and
+#      while filling this file, confirm no two agents' demand_policy claim the same
+#      task without one being dropped or the task being split (this is precisely the
+#      bug rule 3 is designed to surface: legal_m_and_a's build had finance_counsel_ai
+#      and rwi_packager both implicitly "for" the same task before this check caught it).
+#
+# Status of this file: TEMPLATE ONLY — every value below is a placeholder/schema
+# skeleton, not a decision. Copy it to
+# examples/end_to_end_examples_aht/<scenario_name>/conversion_spec.yaml and fill in
+# per scenario — legal_m_and_a is already filled in there as the reference example.
+#
+# Field names that map 1:1 onto real schema fields (Task.objective,
+# TaskRequirement.check, AgentConfig.capability_tier, etc.) use the exact same
+# literal strings as the code/plan, so this file stays copy-paste-safe into
+# actual scenario code later rather than needing translation.
+# ==============================================================================
+
+scenario:
+  name: ""                        # e.g. "legal_m_and_a"
+  source_workflow_file: ""        # examples/end_to_end_examples/<name>/workflow.py
+  source_team_file: ""            # examples/end_to_end_examples/<name>/team.py
+  source_preferences_file: ""     # examples/end_to_end_examples/<name>/preferences.py
+  baseline_reference_doc: ""      # e.g. WORKFLOW_MAP.md — the pre-edit graph/roster this design starts from
+  status: proposed                # proposed | audit_done | pools_defined | grafted | timeline_derived | baseline_rerun
+
+# ------------------------------------------------------------------------------
+# §5.3 step 1-2: feasibility + human-role audit (must be finalized before pools,
+# since pool membership is drawn from the surviving AI-only roster — §5.3a)
+# ------------------------------------------------------------------------------
+human_role_audit:
+  - role: ""                      # agent_id of a HumanAgentConfig in team.py
+    decision: ""                  # "convert" | "drop"
+    rationale: ""                 # why — authority/sign-off language vs. pure knowledge work
+    tasks_affected: []            # task ids/names this role touches
+    covered_by: ""             # if dropped: which surviving pool/agent covers the gap, if any
+
+# ------------------------------------------------------------------------------
+# §3.3 shared TRAIT_POOL — new tuples this scenario needs beyond what already
+# exists in examples/end_to_end_examples/trait_pool.py
+# ------------------------------------------------------------------------------
+trait_pool_deltas:
+  - tuple_name: ""                # e.g. "privacy_reasoning_gpt4o"
+    model: ""
+    model_version: ""
+    capability_tier: ""
+    reason_needed: ""             # e.g. "objective_1 subtask pair must be structurally distinct"
+
+# ------------------------------------------------------------------------------
+# Capability pools (the enterprise-MAS layer). Each pool = one trait tuple + the
+# task domains it serves. Membership/timing is demand-derived (rule below), not
+# a capacity threshold — there is no per-agent concurrency limit in the engine
+# to threshold against (see autoscaling_team_churn.md's "Why reconsider the
+# current mechanism").
+# ------------------------------------------------------------------------------
+pools:
+  - pool_name: ""                 # e.g. "P_privacy_reasoning"
+    trait_tuple: ""               # references trait_pool or trait_pool_deltas entry by tuple_name
+    member_agent_ids: []          # surviving AI agents (post human_role_audit) assigned to this pool
+    feeds_tasks: []                # task ids/names whose workload this pool serves
+    demand_policy:
+      join_trigger: ""             # which task-graph event creates first demand for this specialty, e.g. "T3 nearly done, unblocking T4/T5/T6b"
+      cold_start_bundle: []        # ALL task ids this join is guessed onto at once (rule 1) — never partially reassigned later
+      leave_condition: "every task in cold_start_bundle (plus any later same-pool task) reaches COMPLETED, AND no task ready at the removal timestep still needs this pool"  # rule 2 — verify against actual task durations before picking a timestep
+
+# ------------------------------------------------------------------------------
+# §5.3 steps 4-5 — the task graph grafts. objective_1 = disjoint-pool pair,
+# objective_2 = same-pool reuse task at a non-adjacent point in the graph.
+# ------------------------------------------------------------------------------
+task_graph:
+  unchanged_tasks: []             # existing task ids kept exactly as-is
+  grafts:
+    objective_1:
+      split_task: ""              # original task being split, e.g. "T6"
+      new_subtasks:
+        - id: ""
+          name: ""
+          pool: ""                 # must reference a pools[].pool_name — this is what makes it discriminating
+          requirements: []         # keys into requirements_catalog below
+          requirements_pass_threshold: 0
+    objective_2:
+      reuse_task:
+        id: ""
+        name: ""
+        graft_point: ""            # dependency it attaches after, e.g. "T13"
+        reuses_pool: ""            # MUST equal one objective_1 subtask's pool — that's the reuse test
+        requirements: []
+        requirements_pass_threshold: 0
+
+# ------------------------------------------------------------------------------
+# §3.2 — TaskRequirement catalog. Every item is check: "deterministic" (no
+# llm_classifier option — see plan §3.2).
+# ------------------------------------------------------------------------------
+requirements_catalog:
+  - key: ""
+    task: ""                       # which task/subtask this belongs to
+    description: ""
+    check: deterministic
+    check_fn_name: ""              # planned function name (task_requirements_evaluator.py or scenario-local)
+    discriminates_pool: ""         # which pool this check is designed to structurally pass
+
+# ------------------------------------------------------------------------------
+# Derived team_timeline output. DECIDED (benchmark_conversion.md, "Team-churn
+# generation: autoscaling pools"): offline_static is the correct target, not a
+# stopgap — the churn signal must be independent
+# of the manager's own decisions to count as externally-triggered non-stationarity; a live
+# ready-task-count signal would be manager-reactive (task completion timing depends on
+# assignment quality), which defeats the point. runtime_dynamic is not expected to be chosen;
+# leave method as offline_static unless there's a scenario-specific reason to revisit that.
+# ------------------------------------------------------------------------------
+derived_team_timeline:
+  method: "offline_static"         # see note above before changing this
+  derivation_notes: ""
+  events: []                       # [{timestep, pool, action: add|remove, agent_cfg_ref, reason}]
+
+# ------------------------------------------------------------------------------
+# Formal state/action/transition mapping (verbatim framing, kept traceable to
+# the POSG formalization rather than re-derived per scenario — should not
+# change scenario to scenario; included here so each filled template stays
+# self-contained without re-reading the plan doc).
+# ------------------------------------------------------------------------------
+state_action_scoring_mapping:
+  state_shape: >
+    s = <G, W, C, X, U> — unchanged (symbols as defined in the base MA-Gym POSG
+    formalization). Only W (workers) is restructured: grouped into pools by
+    trait tuple (model, model_version, capability_tier). There is no derived
+    load/capacity quantity — the engine has no per-agent concurrency limit
+    (manager_agent_gym/core/execution/engine.py starts every ready task with an
+    assigned agent concurrently, regardless of what else that agent is running),
+    so pool membership tracks which specialty is needed, not how many units of
+    it exist.
+  action_space: >
+    Unchanged. The Manager Agent still only has its existing action set
+    (assign, inspect, etc.) — demand-driven roster change adds no manager-facing
+    action.
+  transition_rule: >
+    Join: when a newly-ready (or soon-ready) task needs a specialty not already
+    covered by an unfinished bundle on the roster, add one agent of that pool's
+    trait tuple, cold-start-guessed onto every task in that demand window at
+    once (rule 1 — never a partial, one-task-at-a-time join for the same bundle).
+    Leave: remove that agent only once every task in its bundle is COMPLETED and
+    no task ready at that timestep still needs the pool (rule 2). No other
+    removal path exists — no load-driven scale-in, no injected failure, no
+    hand-off to a different specialist mid-bundle. Produces the same
+    {timestep: [(action, agent_cfg, reason), ...]} dict the engine already
+    consumes via AgentRegistry.schedule_agent_add/remove — nothing downstream
+    changes.
+  episode_and_scoring: >
+    Unchanged. Discrete-timestep loop to the step cap; task outcomes graded via
+    requirements_met/task_credit (open_aht_benchmark_plan_prev.md §4).
+
+# ------------------------------------------------------------------------------
+# preferences.py audit — confirm no rubric references a dropped agent_id by name
+# ------------------------------------------------------------------------------
+preferences_audit:
+  rubrics_referencing_dropped_roles: []   # should stay empty; flag anything found
+  rubrics_needing_review: []              # e.g. rubrics tied to a task/role that no longer exists as scoped
+
+# ------------------------------------------------------------------------------
+# §5b — known engine/evaluation bugs to re-verify against the codebase at build
+# time for THIS scenario, before trusting the mechanisms above.
+# ------------------------------------------------------------------------------
+verification_checklist:
+  - item: "Custom aggregation callable on a non-empty-rubric-list Evaluator actually runs (task_credit threshold logic, not silent averaging)"
+    status: unverified            # unverified | confirmed_working | confirmed_broken | fixed
+  - item: "No preferences.py rubric references an agent_id dropped in human_role_audit"
+    status: unverified
+  - item: "Every pool's remove event timestep is strictly after every task in its cold_start_bundle would plausibly be COMPLETED, and no ready task at that timestep still needs the pool (rule 2 — check against estimated_duration_hours, not just that a later timestep exists)"
+    status: unverified
+  - item: "No team_timeline join/leave reason string names a specific task ID (rule 3 — reasons describe specialty/capability demand only); and no two pools' demand_policy claim the same task without one being dropped or the task being split"
+    status: unverified
+
+open_questions: []                 # anything scenario-specific not yet decided
