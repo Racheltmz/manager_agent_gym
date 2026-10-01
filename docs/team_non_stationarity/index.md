@@ -9,6 +9,7 @@ This folder is split so the benchmark and the metrics can be worked on independe
 |---|---|---|
 | [`benchmark.md`](benchmark.md) | Scenario design: private worker content, gated tasks, join/leave events, controls, replayable schedule, gate validation | Draft |
 | [`metrics.md`](metrics.md) | Post-change score, disruption cost, the hidden task→worker mapping, baselines | Draft |
+| [`known_bugs.md`](known_bugs.md) | Upstream MA-Gym bugs that affect this work, with a progress checklist | Tracking |
 
 ## Use case
 
