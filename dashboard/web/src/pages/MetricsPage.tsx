@@ -116,7 +116,7 @@ export default function MetricsPage() {
 
       <h2>Team-change metrics</h2>
       {tc.length === 0 ? (
-        <div className="muted">None for this workflow. Run diagnostics/analyze_team_changes.py.</div>
+        <div className="muted">None for this workflow. Run dashboard/analysis/analyze_team_changes.py.</div>
       ) : (
         <>
           <div className="grid">

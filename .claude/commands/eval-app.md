@@ -5,7 +5,7 @@ argument-hint: start | stop (default: start)
 
 # Eval dashboard: ${1:-start}
 
-The dashboard only reads existing files under `diagnostics/outputs/` and scenario `workflow.py`
+The dashboard only reads existing files under `dashboard/outputs/` and scenario `workflow.py`
 files. It never calls the OpenAI API, so starting and stopping it is safe.
 
 If the argument is `stop`, follow **Stop**. Otherwise (empty or `start`) follow **Start**. Any

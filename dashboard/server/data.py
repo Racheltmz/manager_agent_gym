@@ -1,4 +1,4 @@
-"""Read-only loaders over diagnostics/outputs/. Ported from diagnostics/eval_app.py.
+"""Read-only loaders over the run outputs directory (dashboard/outputs, or $MAG_OUTPUTS_DIR).
 
 Reads existing summary.json / team_change_metrics.json / final_metrics.json only. No
 simulation, no LLM call.
@@ -7,12 +7,13 @@ simulation, no LLM call.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from statistics import mean
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-OUT_ROOT = REPO_ROOT / "diagnostics" / "outputs"
+OUT_ROOT = Path(os.environ.get("MAG_OUTPUTS_DIR") or REPO_ROOT / "dashboard" / "outputs")
 
 METRICS = [
     "weighted_preference_total",
@@ -218,7 +219,7 @@ def nonstationarity_by_mode(
 
 
 def list_team_change_metrics() -> list[dict[str, Any]]:
-    """One row per run with a team_change_metrics.json (diagnostics/analyze_team_changes.py)."""
+    """One row per run with a team_change_metrics.json (dashboard/analysis/analyze_team_changes.py)."""
     rows = []
     for path in sorted(OUT_ROOT.glob("*/*/run_seed_*/team_change_metrics.json")):
         data = _read_json(path)

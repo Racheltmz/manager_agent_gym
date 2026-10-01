@@ -1,12 +1,12 @@
 # Dashboard features
 
-React + FastAPI replacement for `diagnostics/eval_app.py` (Gradio). Reads existing run outputs
+React + FastAPI eval app (replaced the removed Gradio `diagnostics/eval_app.py`). Reads existing run outputs
 and scenario task graphs only; it never starts a simulation.
 
 Run: `scripts/launch_dashboard.sh` (dev, hot reload) or `uv run uvicorn dashboard.server.main:app`
 after `npm run build` in `dashboard/web`.
 
-Status: **Done** / **Planned** / **Gradio only** (still in `eval_app.py`, not yet ported).
+Status: **Done** / **Planned**.
 
 ## Page: Metrics (`/metrics`)
 
@@ -18,8 +18,8 @@ Status: **Done** / **Planned** / **Gradio only** (still in `eval_app.py`, not ye
 | Team-change metrics: post-change vs baseline, disruption cost (charts + table) | Done |
 | Non-stationarity aggregate per manager mode (charts + table) | Done |
 | Join / first-assignment timeline table | Done |
-| Failed tasks assigned to recent joiners | Gradio only |
-| Single-run timeline (task status + team size over time, join/leave markers) | Gradio only |
+| Failed tasks assigned to recent joiners | Planned (was in the removed Gradio app) |
+| Single-run timeline (task status + team size over time, join/leave markers) | Planned (was in the removed Gradio app) |
 | Per-seed spread (error bars) on charts | Planned |
 | Per-event breakdown of team-change metrics | Planned |
 
@@ -42,4 +42,3 @@ Status: **Done** / **Planned** / **Gradio only** (still in `eval_app.py`, not ye
 | Multi-page shell (add a page: one file in `src/pages` + one entry in `App.tsx`) | Done |
 | Light/dark theme | Done |
 | `/eval-app start` and `/eval-app stop` Claude Code command (`.claude/commands/eval-app.md`) | Done |
-| Retire `diagnostics/eval_app.py` once the Gradio-only rows above are ported | Planned |

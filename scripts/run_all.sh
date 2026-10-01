@@ -12,7 +12,7 @@
 # into AgentRegistry.schedule_agent_add/remove().
 #
 # Usage:
-#   OPENAI_API_KEY=sk-... ./diagnostics/run_diagnostic_suite.sh
+#   OPENAI_API_KEY=sk-... ./scripts/run_all.sh
 # or populate .env at repo root with OPENAI_API_KEY=... beforehand.
 
 set -euo pipefail
@@ -25,7 +25,7 @@ MODES=(cot random assign_all)
 MODEL_NAME="gpt-5"
 SEED=42
 MAX_TIMESTEPS="${MAX_TIMESTEPS:-}"   # leave empty to use each scenario's natural length / default (50)
-OUT_ROOT="diagnostics/outputs"
+OUT_ROOT="dashboard/outputs"
 
 if [[ -z "${OPENAI_API_KEY:-}" ]] && ! grep -q '^OPENAI_API_KEY=.\+' .env 2>/dev/null; then
   echo "ERROR: OPENAI_API_KEY is not set (env var) and .env has no non-empty OPENAI_API_KEY=... entry." >&2
@@ -62,4 +62,4 @@ done
 
 echo
 echo "All 9 runs complete. Outputs under: $OUT_ROOT/<manager_mode>/<workflow_name>/run_<timestamp>/"
-echo "Next: python diagnostics/analyze_diagnostic_runs.py"
+echo "Next: python dashboard/analysis/analyze_runs.py"

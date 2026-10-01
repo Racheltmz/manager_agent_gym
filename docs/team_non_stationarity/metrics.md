@@ -82,11 +82,11 @@ LLM call. Running it only reads existing files.
 |---|---|
 | Per-task checklist score (items passed / total) | [`task_requirements_evaluator.py`](../../manager_agent_gym/core/evaluation/task_requirements_evaluator.py) |
 | Post-change score, baseline, disruption cost | [`team_change_metrics.py`](../../manager_agent_gym/core/evaluation/team_change_metrics.py) |
-| CLI over existing runs, writes `team_change_metrics.json` per run | [`diagnostics/analyze_team_changes.py`](../../diagnostics/analyze_team_changes.py) |
-| Dashboard table | [`diagnostics/eval_app.py`](../../diagnostics/eval_app.py) |
+| CLI over existing runs, writes `team_change_metrics.json` per run | [`dashboard/analysis/analyze_team_changes.py`](../../dashboard/analysis/analyze_team_changes.py) |
+| Dashboard table | [`dashboard/web/src/pages/MetricsPage.tsx`](../../dashboard/web/src/pages/MetricsPage.tsx) |
 | Tests | [`tests/test_team_change_metrics.py`](../../tests/test_team_change_metrics.py) |
 
-Run: `uv run python diagnostics/analyze_team_changes.py --workflow <name> --mode cot random`.
+Run: `uv run python dashboard/analysis/analyze_team_changes.py --workflow <name> --mode cot random`.
 
 **Scenario contract.** A scenario opts in under `examples/end_to_end_examples_team/<workflow>/`:
 

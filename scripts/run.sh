@@ -9,5 +9,5 @@ uv run python examples/run_examples.py \
   --workflow_name $WORKFLOWS \
   --manager-agent-mode $MODE \
   --model-name gpt-5 \
-  --output-dir diagnostics/outputs/$MODE \
+  --output-dir dashboard/outputs/$MODE \
   --seed 42

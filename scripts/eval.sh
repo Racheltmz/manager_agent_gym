@@ -5,7 +5,7 @@ WORKFLOWS="marketing_campaign" # legal_m_and_a, marketing_campaign, tech_company
 MODES="cot" # random, cot, assign_all
 SEED=42
 
-uv run python diagnostics/analyze_diagnostic_runs.py \
+uv run python dashboard/analysis/analyze_runs.py \
   --workflow $WORKFLOWS \
   --mode $MODES \
   --seed $SEED
