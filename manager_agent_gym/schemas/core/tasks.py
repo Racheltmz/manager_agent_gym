@@ -2,21 +2,23 @@
 Task data models for Manager Agent Gym.
 """
 
+import re
 from datetime import datetime
 from typing import Literal
 from uuid import UUID, uuid4
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from .base import TaskStatus
 
 
 class TaskRequirement(BaseModel):
     """
-    One deterministically-gradable checklist item on a Task, used to demonstrate
-    (not assert) that the worker assigned to the task had the right trait tuple.
-    See docs/benchmark_aht/open_aht_benchmark_plan_prev.md §3.2 — check is deliberately
-    deterministic-only, no llm_classifier option: the task can be hard, but the
-    check must be cheap/exact (string match, count, number comparison).
+    One deterministically-gradable checklist item on a Task. A task's score is
+    items passed / total items (docs/team_non_stationarity/metrics.md), so each
+    item is a binary, exact check on the task's output text — e.g. that the
+    output follows a worker-private format (docs/team_non_stationarity/benchmark.md).
+    Deterministic-only, no LLM classifier: the task can be hard, but the check
+    must be cheap and exact.
     """
 
     key: str = Field(..., description="Short identifier, e.g. 'id_verification_flow'")
@@ -25,6 +27,33 @@ class TaskRequirement(BaseModel):
         default="deterministic",
         description="Grading mode — deterministic only, never an LLM call.",
     )
+    pattern: str | None = Field(
+        default=None,
+        description=(
+            "Regular expression searched (re.search) in the task's output text; the "
+            "item passes if it matches. Required for the item to be scoreable via "
+            "`passes`; left None on legacy items that only carry a prose description."
+        ),
+    )
+    case_sensitive: bool = Field(
+        default=False, description="Whether `pattern` is matched case-sensitively"
+    )
+
+    @field_validator("pattern")
+    @classmethod
+    def _pattern_must_compile(cls, v: str | None) -> str | None:
+        if v is not None:
+            re.compile(v)
+        return v
+
+    def passes(self, output_text: str) -> bool:
+        """True if `pattern` matches `output_text`. Raises if no pattern is set."""
+        if self.pattern is None:
+            raise ValueError(
+                f"Requirement '{self.key}' has no pattern, so it cannot be scored"
+            )
+        flags = 0 if self.case_sensitive else re.IGNORECASE
+        return re.search(self.pattern, output_text, flags) is not None
 
 
 class Task(BaseModel):
@@ -99,21 +128,27 @@ class Task(BaseModel):
         default=None, description="Quality assessment [0,1]"
     )
 
-    # AHT-benchmark fields (docs/benchmark_aht/open_aht_benchmark_plan_prev.md §3.2). Empty/None by
-    # default so existing scenarios and the manager-facing observation are unaffected —
-    # `requirements` is never read by the manager, only by the requirements evaluator (§4).
+    # Benchmark fields. Empty/None by default so existing scenarios and the manager-facing
+    # observation are unaffected — `requirements` is never read by the manager, only by the
+    # requirements evaluator (docs/team_non_stationarity/metrics.md).
     requirements: list[TaskRequirement] = Field(
         default_factory=list,
-        description="Deterministic checklist demonstrating worker trait-tuple fit.",
+        description=(
+            "Deterministic checklist; task score = items passed / total items. "
+            "Gated tasks use items only a worker holding the matching private content can pass."
+        ),
     )
     requirements_pass_threshold: int | None = Field(
         default=None,
-        description="Minimum number of `requirements` that must pass for completion credit.",
+        description=(
+            "Legacy AHT binary-credit threshold. Unused by the team-membership "
+            "non-stationarity score, which is the fraction of items passed."
+        ),
     )
     objective: Literal["objective_1", "objective_2"] | None = Field(
         default=None,
         description=(
-            "Which AHT benchmark objective this task tests, purely for grouping "
+            "Legacy AHT objective tag (cold-start / reuse), purely for grouping "
             "results after scoring — never read by the grader or the manager."
         ),
     )
