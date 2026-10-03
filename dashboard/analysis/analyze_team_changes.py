@@ -95,7 +95,7 @@ def _fmt(v: float | None) -> str:
 def print_table(results: list[dict]) -> None:
     header = (
         f"{'workflow':<22} {'mode':<10} {'post_change':>11} {'baseline':>9} {'gap':>7} "
-        f"{'disruption':>11} {'unnecessary':>12} {'nec_coverage':>13}"
+        f"{'disruption':>11}  by_case"
     )
     print(header)
     print("-" * len(header))
@@ -103,8 +103,8 @@ def print_table(results: list[dict]) -> None:
         print(
             f"{r['workflow']:<22} {r['manager_mode']:<10} {_fmt(r['post_change_score']):>11} "
             f"{_fmt(r['baseline_score']):>9} {_fmt(r['post_change_gap']):>7} "
-            f"{_fmt(r['disruption_cost']):>11} {_fmt(r['unnecessary_disruption_cost']):>12} "
-            f"{_fmt(r['necessary_coverage']):>13}"
+            f"{_fmt(r['disruption_cost']):>11}  "
+            + " ".join(f"{c}={_fmt(v['post_change_score'])}" for c, v in r["by_case"].items())
         )
 
 

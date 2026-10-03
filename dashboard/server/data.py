@@ -232,14 +232,12 @@ def list_team_change_metrics() -> list[dict[str, Any]]:
                 "run": path.parent.name,
                 **{
                     k: data.get(k)
-                    for k in (
-                        "post_change_score",
-                        "baseline_score",
-                        "post_change_gap",
-                        "disruption_cost",
-                        "unnecessary_disruption_cost",
-                        "necessary_coverage",
-                    )
+                    for k in ("post_change_score", "baseline_score", "post_change_gap", "disruption_cost")
+                },
+                # post-change score per case, one column each
+                **{
+                    case: (data.get("by_case") or {}).get(case, {}).get("post_change_score")
+                    for case in ("specialist", "running_task", "leave")
                 },
             }
         )

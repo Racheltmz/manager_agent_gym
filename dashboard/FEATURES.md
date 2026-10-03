@@ -15,7 +15,7 @@ Status: **Done** / **Planned**.
 | Workflow, variant, and mid-episode-joiner filters | Done |
 | Headline metrics per manager mode (5 small bar charts, mean across runs) | Done |
 | Runs table with run-health status | Done |
-| Team-change metrics: post-change vs baseline, disruption cost (charts + table) | Done |
+| Team-change metrics: post-change vs baseline, disruption cost (control tasks moved), post-change score by case (charts + table) | Done |
 | Non-stationarity aggregate per manager mode (charts + table) | Done |
 | Join / first-assignment timeline table | Done |
 | Failed tasks assigned to recent joiners | Planned (was in the removed Gradio app) |

@@ -19,7 +19,7 @@ What this implementation depends on:
 2. **`assigned_agent_id` per task per timestep**: disruption cost is read from changes in it.
 3. **Task status and output text**: the checklist score only counts `completed` tasks, and
    regex-matches their output resources.
-4. **Manager reassigning work** after a join or leave, within the timestep budget.
+4. **Manager routing work** after a join or leave (and reassigning it, if it chooses to), within the timestep budget.
 5. **Seeds**: the comparison protocol runs several seeds per manager.
 
 It does **not** depend on the LLM judge, stakeholder preferences, or artifact handoff between
@@ -67,19 +67,20 @@ RUNNING / FAILED / COMPLETED tasks.
 has no status check.
 
 **How it hits us:**
-- Disruption cost counts any change in `assigned_agent_id`, so an assign on a task that is already
-  RUNNING or COMPLETED counts as a "reassignment" that changed nothing.
-- On a leave event the departing worker's task is RUNNING and its coroutine still finishes (see
-  the planned row in [`UPDATES.md`](../../UPDATES.md)). If the manager reassigns it, the snapshot
-  shows the new agent, but the output was produced by the departed one, so `final_agent` and
-  `assigned_correctly` are wrong, and the gated task passes on the departed worker's private
-  content.
+- **Running-task case:** handing a RUNNING task to the new worker is the intended best action, but
+  assign only overwrites `assigned_agent_id`. The old worker's coroutine is never cancelled, so it
+  still finishes the task. The snapshot then shows the new worker while the output came from the old
+  one, so the gated checklist fails and `final_agent` / `assigned_correctly` are wrong, and the
+  manager is penalised for doing the right thing.
+- Disruption cost counts changes in `assigned_agent_id` on control tasks, so an assign on a control
+  task that is already RUNNING or COMPLETED registers as a "move" that changed nothing.
 - A reassign after completion rewrites `final_agent` on a finished task.
 
-**Options:** (a) fix the engine so assign rejects non-assignable states and an in-flight task is
-cancelled and returned on leave (already planned); (b) in the metrics, count a reassignment only
-when the task was not finished and was not RUNNING at the time, and record `final_agent` from the
-task's last in-flight assignment.
+**Options:** (a) fix the engine: assigning a RUNNING task cancels the current run and restarts the
+task fresh with the new worker (resuming from partial progress is out of scope), and assign
+rejects COMPLETED / FAILED tasks; (b) metrics only: count a control-task move only when the task
+was not finished at the time. (b) alone cannot fix the running-task case, because the output
+provenance is wrong.
 
 - [ ] Decide (a) or (b)
 - [ ] Add a regression test in [`tests/test_team_change_metrics.py`](../../tests/test_team_change_metrics.py)
@@ -113,7 +114,8 @@ no resources, and finished work is thrown away.
 **Verified:** still present at [`ai_agent.py:161`](../../manager_agent_gym/core/workflow_agents/ai_agent.py)
 and `_calculate_accurate_cost` has no guard.
 
-**How it hits us:** a phantom FAILED on an affected task scores 0 and, through ML-051, blocks its
+**How it hits us:** task failures are out of scope as a designed event, so a FAILED task here is a
+bug, not a result. A phantom FAILED on an affected task scores 0 and, through ML-051, blocks its
 dependents. That looks exactly like the manager mishandling a roster change. The trigger is model
 ids LiteLLM cannot price, so it depends on which model the workers use.
 
@@ -142,7 +144,7 @@ exhausted the 100-timestep budget.
 
 **How it hits us:** unfinished affected tasks score 0 by design, so a manager that runs out of
 timesteps looks the same as one that ignored the roster change. A leave event late in the run has
-little time left to recover.
+little time left for the manager to route its gated task.
 
 - [ ] Pick `max_timesteps` so a competent manager can finish; place events early enough to leave
   recovery time
@@ -193,11 +195,12 @@ the status. Remaining risk: `post_change_score` treats `completed` as the gate, 
 `RemoveTaskAction` on failures.
 
 **How it hits us:** a phantom completion has no output text, so it scores 0 in the metrics code
-(`completed and text`). A manager that removes an affected task makes
-`compute_team_change_metrics` raise `KeyError` ("affected tasks not in the workflow") because
-lookup is by name.
+(`completed and text`). Lookup is by name, so a manager that removes or renames an affected task
+used to make `compute_team_change_metrics` raise `KeyError`. It now scores 0, and only a name that
+appears in no snapshot (a spec typo) raises.
 
-- [ ] Decide what a removed or renamed affected task should score (suggest 0, not an exception)
+- [x] Decide what a removed or renamed affected task should score (0, not an exception; tested in
+  [`tests/test_team_change_metrics.py`](../../tests/test_team_change_metrics.py))
 - Notes:
 
 ### ML-075: read tracking never invoked (Medium)
@@ -297,7 +300,8 @@ quality score is kept as a secondary report (open question in [`metrics.md`](met
   metrics doc and the scripts point there.
 - [ ] **A scheduled `remove` leaves a READY task assigned to a missing agent.** In
   `_execute_ready_tasks` the agent lookup returns `None`, so the task is silently never started
-  and stays assigned to the departed id. Intended as the behaviour under test, but the manager
-  needs to be able to see it (links to ML-053 and the planned roster-change observation).
+  and stays assigned to the departed id. The scope has a worker leave only after every task assigned to it
+  is finished, so a valid scenario never hits this. Scenario authoring has to enforce that (see
+  `UPDATES.md`); the engine itself does not.
 - [ ] **`examples/end_to_end_examples_team/` is empty**, so none of the above has run against a
   real scenario yet. Re-check the "Verified" column once a scenario runs.

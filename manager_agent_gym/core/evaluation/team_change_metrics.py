@@ -12,10 +12,13 @@ with timestep >= t, up to (excluding) the next event's timestep.
 
 Metrics:
 - post_change_score: mean checklist score (items passed / total) over each event's
-  affected tasks, measured on the final state. Unfinished affected tasks score 0.
-- baseline_score: same scoring over every checklist task no event affects.
-- disruption_cost: tasks reassigned / tasks that already had an unfinished assignment
-  when the event hit. Also split into necessary vs unnecessary reassignments.
+  affected tasks, measured on the final state. Unfinished, never-assigned, or removed
+  affected tasks score 0. Also reported per case (specialist / running_task / leave).
+- baseline_score: same scoring over every control task (checklist task no event affects).
+- disruption_cost: control tasks moved to a different worker / control tasks that already
+  had an unfinished assignment when the event hit. Control tasks are unaffected by
+  definition, so every move is unnecessary. Moving an *affected* task is not counted here;
+  it shows up in the post-change score.
 """
 
 from __future__ import annotations
@@ -48,6 +51,9 @@ class TeamChangeSpec:
     # Hidden task-name -> worker ids that should hold the task. Scorer-only, never shown
     # to the manager. Optional: without an entry the correct-assignment check is skipped.
     correct_agents: Mapping[str, frozenset[str]] = field(default_factory=dict)
+    # Task name -> case ("specialist" or "running_task") for join-affected tasks, so results can
+    # be reported per case. Affected tasks of a `remove` event are reported as "leave".
+    cases: Mapping[str, str] = field(default_factory=dict)
 
 
 def _tasks_by_name(snapshot: Snapshot) -> dict[str, Mapping]:
@@ -72,7 +78,17 @@ def _score_task(
     requirements: list[TaskRequirement],
 ) -> dict[str, Any]:
     """Checklist score for one task on the final state. Unfinished tasks score 0."""
-    task = final_tasks[name]
+    task = final_tasks.get(name)  # None if the manager removed or renamed it: scores 0
+    if task is None:
+        return {
+            "task": name,
+            "completed": False,
+            "passed": 0,
+            "total": len(requirements),
+            "score": 0.0,
+            "failed_keys": [r.key for r in requirements],
+            "final_agent": None,
+        }
     completed = _status(task) == "completed"
     text = (
         task_output_text(task.get("output_resource_ids") or [], resources)
@@ -115,7 +131,10 @@ def compute_team_change_metrics(
     resources = final.get("resources") or {}
 
     affected_all = {n for e in spec.events for n in e.affected_tasks}
-    unknown = sorted(n for n in affected_all if n not in final_tasks)
+    # A name seen in no snapshot is a typo in the spec. A name the manager removed or renamed
+    # is only missing from the final state, and scores 0.
+    ever_seen = {n for snap in snapshots.values() for n in _tasks_by_name(snap)}
+    unknown = sorted(n for n in affected_all if n not in ever_seen)
     if unknown:
         raise KeyError(f"affected tasks not in the workflow: {unknown}")
     unscoreable = sorted(n for n in affected_all if not _scoreable(requirements_by_task.get(n)))
@@ -125,7 +144,7 @@ def compute_team_change_metrics(
     event_results: list[dict[str, Any]] = []
     for ev in spec.events:
         # An event's response window ends where the next event starts, so one event's
-        # reassignments are never charged to another.
+        # moves are never charged to another.
         next_ts = min((e.timestep for e in spec.events if e.timestep > ev.timestep), default=None)
         before = [ts for ts in timesteps if ts < ev.timestep]
         after = [
@@ -135,34 +154,35 @@ def compute_team_change_metrics(
         ]
         pre_tasks = _tasks_by_name(snapshots[before[-1]]) if before else {}
 
-        # Tasks that had an unfinished assignment when the event hit.
-        already: dict[str, str] = {
-            name: t["assigned_agent_id"]
-            for name, t in pre_tasks.items()
-            if t.get("assigned_agent_id") and _status(t) not in _FINISHED
-        }
+        def moved_after(names: dict[str, str]) -> dict[str, str]:
+            """task -> first different agent it was given in the response window."""
+            moved: dict[str, str] = {}
+            for ts in after:
+                post_tasks = _tasks_by_name(snapshots[ts])
+                for name, pre_agent in names.items():
+                    if name in moved:
+                        continue
+                    agent = (post_tasks.get(name) or {}).get("assigned_agent_id")
+                    if agent and agent != pre_agent:
+                        moved[name] = agent
+            return moved
 
-        reassigned: dict[str, str] = {}  # task -> first different agent it moved to
-        for ts in after:
-            post_tasks = _tasks_by_name(snapshots[ts])
-            for name, pre_agent in already.items():
-                if name in reassigned:
-                    continue
-                agent = (post_tasks.get(name) or {}).get("assigned_agent_id")
-                if agent and agent != pre_agent:
-                    reassigned[name] = agent
+        def assigned_unfinished(only: set[str] | None, exclude: set[str]) -> dict[str, str]:
+            return {
+                name: t["assigned_agent_id"]
+                for name, t in pre_tasks.items()
+                if t.get("assigned_agent_id")
+                and _status(t) not in _FINISHED
+                and name not in exclude
+                and (only is None or name in only)
+            }
 
-        # A reassignment is necessary if the holder left, or the hidden mapping says the
-        # holder was never a correct worker for that task.
-        def needs_move(name: str, pre_agent: str) -> bool:
-            if ev.action == "remove" and pre_agent == ev.agent_id:
-                return True
-            correct = spec.correct_agents.get(name)
-            return correct is not None and pre_agent not in correct
-
-        needed = {n for n, a in already.items() if needs_move(n, a)}
-        necessary = set(reassigned) & needed
-        unnecessary = set(reassigned) - needed
+        # Control tasks (no event affects them) that already had an unfinished assignment.
+        controls = assigned_unfinished(None, affected_all)
+        control_moved = moved_after(controls)
+        # Affected tasks that were already assigned and then moved: informational only,
+        # since a correct move is rewarded by the post-change score, not penalised here.
+        affected_moved = moved_after(assigned_unfinished(set(ev.affected_tasks), set()))
 
         scored = [
             _score_task(n, final_tasks, resources, requirements_by_task[n])
@@ -173,6 +193,9 @@ def compute_team_change_metrics(
             row["assigned_correctly"] = (
                 None if correct is None else row["final_agent"] in correct
             )
+            row["case"] = spec.cases.get(row["task"]) or (
+                "leave" if ev.action == "remove" else None
+            )
 
         event_results.append(
             {
@@ -180,19 +203,11 @@ def compute_team_change_metrics(
                 "action": ev.action,
                 "agent_id": ev.agent_id,
                 "affected": scored,
-                "post_change_score": mean(r["score"] for r in scored)
-                if scored
-                else None,
-                "already_assigned": len(already),
-                "reassigned": sorted(reassigned),
-                "necessary_reassigned": sorted(necessary),
-                "unnecessary_reassigned": sorted(unnecessary),
-                "needed_reassignment": sorted(needed),
-                "disruption_cost": len(reassigned) / len(already) if already else None,
-                "unnecessary_disruption_cost": len(unnecessary) / len(already)
-                if already
-                else None,
-                "necessary_coverage": len(necessary) / len(needed) if needed else None,
+                "post_change_score": mean(r["score"] for r in scored) if scored else None,
+                "affected_reassigned": sorted(affected_moved),
+                "control_assigned": len(controls),
+                "control_moved": sorted(control_moved),
+                "disruption_cost": len(control_moved) / len(controls) if controls else None,
             }
         )
 
@@ -207,11 +222,18 @@ def compute_team_change_metrics(
     ]
     post = mean(post_scores) if post_scores else None
 
-    total_already = sum(e["already_assigned"] for e in event_results)
-    total_reassigned = sum(len(e["reassigned"]) for e in event_results)
-    total_unnecessary = sum(len(e["unnecessary_reassigned"]) for e in event_results)
-    total_needed = sum(len(e["needed_reassignment"]) for e in event_results)
-    total_necessary = sum(len(e["necessary_reassigned"]) for e in event_results)
+    by_case: dict[str, dict[str, Any]] = {}
+    for e in event_results:
+        for row in e["affected"]:
+            if row["case"] is not None:
+                by_case.setdefault(row["case"], {"scores": []})["scores"].append(row["score"])
+    by_case_summary = {
+        case: {"tasks": len(v["scores"]), "post_change_score": mean(v["scores"])}
+        for case, v in sorted(by_case.items())
+    }
+
+    total_controls = sum(e["control_assigned"] for e in event_results)
+    total_moved = sum(len(e["control_moved"]) for e in event_results)
 
     return {
         "events": event_results,
@@ -220,9 +242,6 @@ def compute_team_change_metrics(
         "post_change_gap": (post - baseline)
         if post is not None and baseline is not None
         else None,
-        "disruption_cost": total_reassigned / total_already if total_already else None,
-        "unnecessary_disruption_cost": total_unnecessary / total_already
-        if total_already
-        else None,
-        "necessary_coverage": total_necessary / total_needed if total_needed else None,
+        "disruption_cost": total_moved / total_controls if total_controls else None,
+        "by_case": by_case_summary,
     }

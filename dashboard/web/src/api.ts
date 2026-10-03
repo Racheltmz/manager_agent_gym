@@ -50,8 +50,9 @@ export type TeamChangeRow = {
   baseline_score: number | null;
   post_change_gap: number | null;
   disruption_cost: number | null;
-  unnecessary_disruption_cost: number | null;
-  necessary_coverage: number | null;
+  specialist: number | null;
+  running_task: number | null;
+  leave: number | null;
 };
 
 export type Scenario = { id: string; collection: string; name: string };

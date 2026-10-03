@@ -14,16 +14,19 @@ An invisible mapping from each task to the worker(s) that should be assigned to 
 - **Scorer-only.** Never exposed to the manager (it sees only task descriptions and public
   `agent_capabilities`).
 - Derived from gate validation (`task × worker → pass/fail`, see
-  [`benchmark.md`](benchmark.md#5-gate-validation-if-feasible)), so it is verified, not asserted.
+  [`benchmark.md`](benchmark.md#7-gate-validation-if-feasible)), so it is verified, not asserted.
 - For control tasks, the mapping is simply "whichever worker currently holds it; no change needed".
 
-## Affected tasks
+## Affected tasks and control tasks
 
 After each join or leave event, the **affected tasks are fixed in advance** (in the scenario spec),
 not computed from the run:
 
-- Join event → tasks gated on the new worker.
-- Leave event → the departing worker's in-progress task(s).
+- Join event → tasks gated on the new worker (the specialist and running-task cases).
+- Leave event → unassigned tasks gated to a worker who remains.
+
+Every other task is a **control task**: no event touches it, and its current assignment is already
+best by the fixed ground truth.
 
 ## Metric 1: Post-change score
 
@@ -35,42 +38,40 @@ post_change_score  = mean over t in affected(event) of task_score(t)
 ```
 
 - Computed per event, then averaged per scenario/run.
-- **Compare against general workflow performance**: mean `task_score` over all non-affected tasks
-  (controls) in the same run. The gap (`post_change_score - baseline_score`) shows how much the
-  roster change specifically hurt or helped.
+- **Compare against general workflow performance**: mean `task_score` over all control tasks in the
+  same run. The gap (`post_change_score - baseline_score`) shows how much the roster change
+  specifically hurt or helped.
 - Unfinished or never-assigned affected tasks score `0` (not excluded), otherwise dropping a task
   would be free.
+- Reassigning an affected task correctly (for example moving a gated task to the specialist)
+  **shows up here**, not in disruption cost.
 
 ## Metric 2: Disruption cost
 
 ```
-disruption_cost = tasks_reassigned / tasks_already_assigned
+disruption_cost = control tasks moved to a different worker
+                  / control tasks that already had an agent assigned at the event
 ```
 
-- `tasks_already_assigned`: tasks that had an agent assigned at the time of the event.
-- `tasks_reassigned`: of those, tasks the manager moved to a different agent afterwards.
-- Spec rule: a task already assigned to an agent that stays needs no reassignment, so
-  reassigning such a task is pure disruption.
+- **Numerator:** control tasks (not affected by the join or leave) that the manager moved to a
+  different worker. These are unnecessary by definition, since the fixed ground truth says the
+  current assignment was already best.
+- **Denominator:** all control tasks that had an agent assigned at the time of the event.
+- **Range:** 0 to 1. **0 means the manager left everything it should have alone.**
+- Reassigning an affected task correctly does **not** count against it.
 
-Refinement to decide (leave events make some reassignment **necessary**): a raw ratio penalizes the
-manager for correctly reassigning a departed worker's task. Options:
+## Metric 3: Cost (later)
 
-| Variant | Numerator | Reading |
-|---|---|---|
-| Raw (as specified) | All reassignments | Simple, but a perfect manager scores > 0 on leave events |
-| **Unnecessary** (suggested) | Reassignments of tasks whose worker did *not* leave | Should be 0 for a good manager |
-| Necessary coverage | Departed-worker tasks that *were* reassigned / departed-worker tasks | Complements Metric 1; catches dropped tasks |
+Cost in time, resources and so on. To be worked on later.
 
-Suggest reporting raw (to match the spec) plus the split into unnecessary / necessary.
-
-## Reading the two together
+## Reading the first two together
 
 | Post-change score | Disruption cost | Interpretation |
 |---|---|---|
 | High | Low | Delegated correctly and left other work alone |
-| High | High | Fixed affected tasks, but churned unaffected ones (thrashing) |
-| Low | Low | Ignored the roster change (e.g. never used the new worker, dropped the orphaned task) |
-| Low | High | Reassigned a lot, to the wrong workers |
+| High | High | Fixed the affected tasks, but churned control tasks (thrashing) |
+| Low | Low | Ignored the roster change (e.g. never used the new worker, or left a gated task unrouted) |
+| Low | High | Moved a lot of work, to the wrong workers |
 
 ## Implementation
 
@@ -78,21 +79,23 @@ Computed post hoc from the per-timestep snapshots a run already writes
 (`workflow_outputs/workflow_execution_<run_id>_t<NNNN>.json`), so there is no engine change and no
 LLM call. Running it only reads existing files.
 
-| Piece | Where |
-|---|---|
-| Per-task checklist score (items passed / total) | [`task_requirements_evaluator.py`](../../manager_agent_gym/core/evaluation/task_requirements_evaluator.py) |
-| Post-change score, baseline, disruption cost | [`team_change_metrics.py`](../../manager_agent_gym/core/evaluation/team_change_metrics.py) |
-| CLI over existing runs, writes `team_change_metrics.json` per run | [`dashboard/analysis/analyze_team_changes.py`](../../dashboard/analysis/analyze_team_changes.py) |
-| Dashboard table | [`dashboard/web/src/pages/MetricsPage.tsx`](../../dashboard/web/src/pages/MetricsPage.tsx) |
-| Tests | [`tests/test_team_change_metrics.py`](../../tests/test_team_change_metrics.py) |
+| Piece | Where | Status |
+|---|---|---|
+| Per-task checklist score (items passed / total) | [`task_requirements_evaluator.py`](../../manager_agent_gym/core/evaluation/task_requirements_evaluator.py) | Matches this doc |
+| Post-change score, baseline, disruption cost (control tasks only), per-case scores | [`team_change_metrics.py`](../../manager_agent_gym/core/evaluation/team_change_metrics.py) | Matches this doc |
+| CLI over existing runs, writes `team_change_metrics.json` per run | [`dashboard/analysis/analyze_team_changes.py`](../../dashboard/analysis/analyze_team_changes.py) | Matches this doc |
+| Dashboard table and charts (including per case) | [`dashboard/web/src/pages/MetricsPage.tsx`](../../dashboard/web/src/pages/MetricsPage.tsx) | Matches this doc |
+| Tests | [`tests/test_team_change_metrics.py`](../../tests/test_team_change_metrics.py) | Cover the definitions above on a made-up run (join with specialist and running-task cases, then a leave) |
 
 Run: `uv run python dashboard/analysis/analyze_team_changes.py --workflow <name> --mode cot random`.
 
 **Scenario contract.** A scenario opts in under `examples/end_to_end_examples_team/<workflow>/`:
 
 - `team_change_spec.py` with `create_team_change_spec() -> TeamChangeSpec`: the events (timestep,
-  `add`/`remove`, agent id) with their **affected tasks fixed by name**, plus the optional hidden
-  `correct_agents` mapping (scorer-only).
+  `add`/`remove`, agent id) with their **affected tasks fixed by name**, plus the hidden
+  `correct_agents` mapping (scorer-only), plus `cases`: the **case** of each join-affected task
+  (`specialist` or `running_task`) so results can be reported per case. Affected tasks of a leave
+  are reported as `leave`. The control set is every task no event affects, so it needs no entry.
 - `workflow.py` with `create_workflow()`, whose affected tasks carry `requirements` where every
   item has a `pattern`.
 
@@ -101,30 +104,32 @@ manager acts, then the snapshot for `t` is written. So the state *before* an eve
 snapshot before `t`, and the manager's response is read from snapshots from `t` up to (not
 including) the next event.
 
-**Definitions as implemented**
+**Definitions**
 
-- `already_assigned`: tasks with an assigned agent that were not completed or failed before the
-  event. Finished tasks can't be reassigned, so they are excluded from the denominator.
-- A reassignment is **necessary** if the holder left, or the hidden mapping says the holder was
-  never a correct worker for that task. Otherwise it is **unnecessary**.
-- Unfinished affected tasks score 0. Control tasks without a pattern-based checklist are left out
-  of the baseline.
-- Run-level numbers pool the events: `disruption_cost` is total reassigned over total
-  already-assigned, and `post_change_score` is the mean of the per-event scores.
+- A control task counts toward the disruption denominator only if it had an assigned agent and was
+  not yet finished at the event, since a finished task can no longer be moved.
+- Unfinished affected tasks score 0, and so does an affected task the manager removed or renamed.
+  A task name that appears in no snapshot is a typo in the spec and raises an error.
+- Run-level numbers pool the events: `disruption_cost` is total moved control tasks over total
+  assigned control tasks, and `post_change_score` is the mean of the per-event scores.
 
 ## Comparison protocol
 
-- Managers: `cot`, `random` (**not** `assign_all`).
+- Managers: `cot`, `random`, and the naive "reassign all tasks to new workers" baseline
+  (**not** `assign_all`).
 - Same predefined schedule and same worker prompts for every manager, so differences come from the
   manager only.
 - `random` gives a floor: if gated tasks are rarely passed under `random`, the gates discriminate.
+- The naive baseline should score a high disruption cost, since it moves control tasks too.
 - Run multiple seeds per manager; report mean and spread per metric.
 
 ## Open questions
 
 - Are metrics aggregated per event or per run? (Suggest both: per-event for diagnosis, per-run
   for the headline number.)
-- Timing: should the post-change score reward speed of reassignment (steps between event and
-  correct reassignment), or only the final checklist outcome?
+- Timing: should the post-change score reward speed of routing (steps between the event and the
+  affected task going to a correct worker), or only the final checklist outcome?
 - Does the existing workflow-level scoring (quality / speed / cost) stay as a secondary report,
   or is this benchmark's score standalone?
+- Should results be broken down per case (specialist, running task), given the case rotates across
+  workflows?

@@ -52,7 +52,7 @@ export default function MetricsPage() {
 
   const tc: TeamChangeRow[] = (teamChange.data ?? []).filter((r) => r.workflow === wf);
   const tcByMode = useMemo(
-    () => meanByMode(tc, ["post_change_score", "baseline_score", "disruption_cost", "unnecessary_disruption_cost"]),
+    () => meanByMode(tc, ["post_change_score", "baseline_score", "disruption_cost", "specialist", "running_task", "leave"]),
     [tc],
   );
 
@@ -131,12 +131,17 @@ export default function MetricsPage() {
               />
             </div>
             <div className="card">
-              <h3>Disruption cost</h3>
+              <h3>Disruption cost (control tasks moved)</h3>
+              <ModeBars data={tcByMode} series={[{ key: "disruption_cost", label: "disruption", color: "#d1495b" }]} />
+            </div>
+            <div className="card">
+              <h3>Post-change score by case</h3>
               <ModeBars
                 data={tcByMode}
                 series={[
-                  { key: "disruption_cost", label: "raw", color: "#d99a1c" },
-                  { key: "unnecessary_disruption_cost", label: "unnecessary", color: "#d1495b" },
+                  { key: "specialist", label: "specialist", color: "#2a9d6f" },
+                  { key: "running_task", label: "running task", color: "#d99a1c" },
+                  { key: "leave", label: "leave", color: "#6ea0ff" },
                 ]}
               />
             </div>
@@ -150,8 +155,9 @@ export default function MetricsPage() {
               { key: "baseline_score", label: "baseline", digits: 3 },
               { key: "post_change_gap", label: "gap", digits: 3 },
               { key: "disruption_cost", label: "disruption", digits: 3 },
-              { key: "unnecessary_disruption_cost", label: "unnecessary", digits: 3 },
-              { key: "necessary_coverage", label: "coverage", digits: 3 },
+              { key: "specialist", digits: 3 },
+              { key: "running_task", label: "running task", digits: 3 },
+              { key: "leave", digits: 3 },
             ]}
           />
         </>
