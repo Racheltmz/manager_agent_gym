@@ -2,17 +2,9 @@ import { useMemo, useState } from "react";
 import { api, type Run, type TeamChangeRow } from "../api";
 import { useAsync } from "../useAsync";
 import DataTable from "../components/DataTable";
-import ModeBars from "../components/ModeBars";
+import ChecklistDag from "../components/ChecklistDag";
 
 const MODE_ORDER = ["random", "cot", "assign_all"];
-const HEADLINE = [
-  { key: "weighted_preference_total", label: "Preference alignment", color: "#1f77b4" },
-  { key: "constraint_adherence", label: "Constraint adherence", color: "#ff7f0e" },
-  { key: "stakeholder_management", label: "Stakeholder management", color: "#d62728" },
-  { key: "goal_achievement", label: "Goal achievement", color: "#2ca02c" },
-  { key: "workflow_completion_time_hours", label: "Completion time (hrs)", color: "#9467bd" },
-] as const;
-
 const byMode = (a: { manager_mode: string }, b: { manager_mode: string }) =>
   (MODE_ORDER.indexOf(a.manager_mode) + 1 || 99) - (MODE_ORDER.indexOf(b.manager_mode) + 1 || 99);
 
@@ -30,25 +22,47 @@ function meanByMode<T extends { manager_mode: string }>(rows: T[], keys: string[
   });
 }
 
+type Stat = { key: string; label: string; digits?: number };
+
+/** Single-value metrics as dashboard cards: one big number per manager mode. */
+function StatCards({ data, stats }: { data: Record<string, string | number | null>[]; stats: Stat[] }) {
+  return (
+    <div className="grid" style={{ marginBottom: 16 }}>
+      {stats.map((st) => (
+        <div className="card" key={st.key}>
+          <h3>{st.label}</h3>
+          <div style={{ display: "flex", gap: 24, padding: "6px 0 10px" }}>
+            {data.map((d) => (
+              <div key={String(d.manager_mode)}>
+                <div style={{ fontSize: 34, fontWeight: 600, lineHeight: 1.1 }}>
+                  {typeof d[st.key] === "number" ? (d[st.key] as number).toFixed(st.digits ?? 3) : "–"}
+                </div>
+                <div className="muted">{d.manager_mode}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function MetricsPage() {
   const runs = useAsync(() => api.runs(), []);
   const teamChange = useAsync(() => api.teamChange(), []);
   const [workflow, setWorkflow] = useState<string>("");
-  const [variant, setVariant] = useState<string>("main");
   const [midOnly, setMidOnly] = useState(true);
 
   const workflows = useMemo(() => [...new Set((runs.data ?? []).map((r) => r.workflow))].sort(), [runs.data]);
-  const variants = useMemo(() => [...new Set((runs.data ?? []).map((r) => r.variant_group))].sort(), [runs.data]);
   const wf = workflow || workflows[0] || "";
 
   const wfRuns: Run[] = useMemo(
-    () => (runs.data ?? []).filter((r) => r.workflow === wf && (variant === "all" || r.variant_group === variant)),
-    [runs.data, wf, variant],
+    () => (runs.data ?? []).filter((r) => r.workflow === wf),
+    [runs.data, wf],
   );
-  const headline = useMemo(() => meanByMode(wfRuns, HEADLINE.map((h) => h.key)), [wfRuns]);
 
-  const ns = useAsync(() => (wf ? api.nonstationarity(wf, midOnly, variant) : Promise.resolve([])), [wf, midOnly, variant]);
-  const joins = useAsync(() => (wf ? api.joins(wf, midOnly, variant) : Promise.resolve([])), [wf, midOnly, variant]);
+  const ns = useAsync(() => (wf ? api.nonstationarity(wf, midOnly) : Promise.resolve([])), [wf, midOnly]);
+  const joins = useAsync(() => (wf ? api.joins(wf, midOnly) : Promise.resolve([])), [wf, midOnly]);
 
   const tc: TeamChangeRow[] = (teamChange.data ?? []).filter((r) => r.workflow === wf);
   const tcByMode = useMemo(
@@ -69,30 +83,37 @@ export default function MetricsPage() {
             ))}
           </select>
         </label>
-        <label>
-          Variant
-          <select value={variant} onChange={(e) => setVariant(e.target.value)}>
-            {variants.map((v) => (
-              <option key={v}>{v}</option>
-            ))}
-            <option value="all">all</option>
-          </select>
-        </label>
-        <label>
-          <input type="checkbox" checked={midOnly} onChange={(e) => setMidOnly(e.target.checked)} />
-          Mid-episode joiners only
-        </label>
       </div>
 
-      <h2>Headline metrics (mean across runs)</h2>
-      <div className="grid">
-        {HEADLINE.map((h) => (
-          <div className="card" key={h.key}>
-            <h3>{h.label}</h3>
-            <ModeBars data={headline} series={[h]} />
-          </div>
-        ))}
-      </div>
+      <h2>Metrics (mean across runs)</h2>
+      <StatCards
+        data={tcByMode}
+        stats={[
+          { key: "post_change_score", label: "Post-change score" },
+          { key: "disruption_cost", label: "Disruption score" },
+          { key: "baseline_score", label: "Baseline score" },
+          { key: "leave", label: "Post-change: leave" },
+        ]}
+      />
+      {tc.length === 0 ? (
+        <div className="muted">None for this workflow. Run dashboard/analysis/analyze_team_changes.py.</div>
+      ) : (
+        <DataTable
+          rows={[...tc].sort(byMode)}
+          columns={[
+            { key: "manager_mode", label: "mode" },
+            { key: "run" },
+            { key: "post_change_score", label: "post-change", digits: 3 },
+            { key: "baseline_score", label: "baseline", digits: 3 },
+            { key: "post_change_gap", label: "gap", digits: 3 },
+            { key: "disruption_cost", label: "disruption", digits: 3 },
+            { key: "leave", digits: 3 },
+          ]}
+        />
+      )}
+
+      <h2>Checklist score by task over time</h2>
+      <ChecklistDag runs={[...wfRuns].sort(byMode)} />
 
       <h2>Runs</h2>
       <DataTable
@@ -114,79 +135,21 @@ export default function MetricsPage() {
         ]}
       />
 
-      <h2>Team-change metrics</h2>
-      {tc.length === 0 ? (
-        <div className="muted">None for this workflow. Run dashboard/analysis/analyze_team_changes.py.</div>
-      ) : (
-        <>
-          <div className="grid">
-            <div className="card">
-              <h3>Post-change vs baseline score</h3>
-              <ModeBars
-                data={tcByMode}
-                series={[
-                  { key: "post_change_score", label: "post-change", color: "#2563eb" },
-                  { key: "baseline_score", label: "baseline", color: "#9aa3af" },
-                ]}
-              />
-            </div>
-            <div className="card">
-              <h3>Disruption cost (control tasks moved)</h3>
-              <ModeBars data={tcByMode} series={[{ key: "disruption_cost", label: "disruption", color: "#d1495b" }]} />
-            </div>
-            <div className="card">
-              <h3>Post-change score by case</h3>
-              <ModeBars
-                data={tcByMode}
-                series={[
-                  { key: "specialist", label: "specialist", color: "#2a9d6f" },
-                  { key: "running_task", label: "running task", color: "#d99a1c" },
-                  { key: "leave", label: "leave", color: "#6ea0ff" },
-                ]}
-              />
-            </div>
-          </div>
-          <DataTable
-            rows={[...tc].sort(byMode)}
-            columns={[
-              { key: "manager_mode", label: "mode" },
-              { key: "run" },
-              { key: "post_change_score", label: "post-change", digits: 3 },
-              { key: "baseline_score", label: "baseline", digits: 3 },
-              { key: "post_change_gap", label: "gap", digits: 3 },
-              { key: "disruption_cost", label: "disruption", digits: 3 },
-              { key: "specialist", digits: 3 },
-              { key: "running_task", label: "running task", digits: 3 },
-              { key: "leave", digits: 3 },
-            ]}
-          />
-        </>
-      )}
-
       <h2>Non-stationarity handling</h2>
-      {ns.data && ns.data.length > 0 && (
-        <div className="grid">
-          <div className="card">
-            <h3>Agents never assigned / delayed</h3>
-            <ModeBars
-              data={ns.data as unknown as Record<string, string | number | null>[]}
-              series={[
-                { key: "never_assigned_agents", label: "never assigned", color: "#d62728" },
-                { key: "delayed_assignment_agents", label: "delayed", color: "#ff7f0e" },
-              ]}
-              digits={0}
-            />
-          </div>
-          <div className="card">
-            <h3>Avg assignment lag (timesteps)</h3>
-            <ModeBars
-              data={ns.data as unknown as Record<string, string | number | null>[]}
-              series={[{ key: "avg_assignment_lag_timesteps", label: "lag", color: "#9467bd" }]}
-              digits={1}
-            />
-          </div>
-        </div>
-      )}
+      <div className="filters">
+        <label>
+          <input type="checkbox" checked={midOnly} onChange={(e) => setMidOnly(e.target.checked)} />
+          Mid-episode joiners only
+        </label>
+      </div>
+      <StatCards
+        data={(ns.data ?? []) as unknown as Record<string, string | number | null>[]}
+        stats={[
+          { key: "never_assigned_agents", label: "Agents never assigned", digits: 0 },
+          { key: "delayed_assignment_agents", label: "Agents delayed", digits: 0 },
+          { key: "avg_assignment_lag_timesteps", label: "Avg assignment lag (timesteps)" },
+        ]}
+      />
       <DataTable rows={ns.data ?? []} columns={[
         { key: "manager_mode", label: "mode" },
         { key: "agents_tracked", label: "agents" },

@@ -9,7 +9,7 @@ const COLOR: Record<DiffStatus, string> = {
 
 /** Greedy wrap into at most `lines` lines. Breaks at spaces and after underscores, so long
  *  snake_case names wrap instead of overflowing; the remainder is ellipsised. */
-function wrap(text: string, max: number, lines = 2): string[] {
+export function wrap(text: string, max: number, lines = 2): string[] {
   const tokens = text.split(/(?<=_)|\s+/).filter(Boolean);
   const out: string[] = [];
   let cur = "";

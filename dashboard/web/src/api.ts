@@ -2,7 +2,6 @@ export type Run = {
   workflow: string;
   workflow_folder: string;
   manager_mode: string;
-  variant_group: string;
   run: string;
   weighted_preference_total: number | null;
   constraint_adherence: number | null;
@@ -55,6 +54,28 @@ export type TeamChangeRow = {
   leave: number | null;
 };
 
+export type ChecklistDag = {
+  timesteps: number[];
+  nodes: {
+    id: string;
+    total: number;
+    layer: number;
+    row: number;
+    scores: Record<string, { passed: number; total: number; failed_keys: string[]; agent: string | null; status: string } | null>;
+  }[];
+  edges: [string, string][];
+};
+
+export type ChecklistTask = {
+  task: string;
+  timestep: number;
+  parts: {
+    task: string;
+    requirements: { key: string; description: string | null; pattern: string | null; passed: boolean }[];
+    outputs: { name: string | null; content: string | null }[];
+  }[];
+};
+
 export type Scenario = { id: string; collection: string; name: string };
 
 export type DiffStatus = "added" | "removed" | "changed" | "unchanged";
@@ -96,11 +117,15 @@ async function get<T>(path: string, params: Record<string, string | boolean> = {
 
 export const api = {
   runs: () => get<Run[]>("runs"),
-  nonstationarity: (workflow: string, midEpisodeOnly: boolean, variant: string) =>
-    get<NonStationarityRow[]>("nonstationarity", { workflow, mid_episode_only: midEpisodeOnly, variant }),
-  joins: (workflow: string, midEpisodeOnly: boolean, variant: string) =>
-    get<JoinRow[]>("joins", { workflow, mid_episode_only: midEpisodeOnly, variant }),
+  nonstationarity: (workflow: string, midEpisodeOnly: boolean) =>
+    get<NonStationarityRow[]>("nonstationarity", { workflow, mid_episode_only: midEpisodeOnly }),
+  joins: (workflow: string, midEpisodeOnly: boolean) =>
+    get<JoinRow[]>("joins", { workflow, mid_episode_only: midEpisodeOnly }),
   teamChange: () => get<TeamChangeRow[]>("team-change"),
+  checklistDag: (workflowFolder: string, managerMode: string, run: string) =>
+    get<ChecklistDag>("checklist-dag", { workflow_folder: workflowFolder, manager_mode: managerMode, run }),
+  checklistTask: (workflowFolder: string, managerMode: string, run: string, task: string, timestep: number) =>
+    get<ChecklistTask>("checklist-task", { workflow_folder: workflowFolder, manager_mode: managerMode, run, task, timestep: String(timestep) }),
   scenarios: () => get<Scenario[]>("scenarios"),
   compare: (view: View, before: string, after: string) => get<Compare>("compare", { view, before, after }),
 };
