@@ -40,7 +40,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from examples.scenarios import SCENARIOS  # noqa: E402
+from examples.scenarios import get_scenario  # noqa: E402
 
 ALL_MODES = ["cot", "random", "assign_all"]
 from dashboard.server.data import OUT_ROOT  # noqa: E402
@@ -121,7 +121,7 @@ def get_team_join_events(workflow_name: str) -> list[tuple[int, str, str]]:
     negative lag / false "assigned" results. Only the first add per
     agent_id is treated as a join event here; later re-adds are dropped.
     """
-    spec = SCENARIOS[workflow_name]
+    spec = get_scenario(workflow_name)
     timeline = spec.create_team_timeline()
     events: list[tuple[int, str, str]] = []
     seen_agent_ids: set[str] = set()
@@ -245,7 +245,7 @@ def get_goal_achievement_evaluator_name(workflow_name: str) -> str | None:
     """Each scenario defines its own goal-achievement evaluator with a workflow-specific
     name (e.g. "legal_mna_goal_achievement_eval"); resolve it via the scenario's own
     factory rather than hardcoding names per workflow."""
-    spec = SCENARIOS[workflow_name]
+    spec = get_scenario(workflow_name)
     factory = getattr(spec, "create_evaluator_to_measure_goal_achievement", None)
     if factory is None:
         return None

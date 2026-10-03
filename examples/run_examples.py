@@ -1,7 +1,9 @@
 # pyright: reportMissingImports=false, reportMissingTypeStubs=false
 """
 Unified example runner that loads workflow, preferences, and team timeline
-from per-scenario modules under examples/end_to_end_examples/<workflow_name>/.
+from per-scenario modules under examples/end_to_end_examples/<workflow_name>/
+(--benchmark original) or examples/end_to_end_examples_team/<workflow_name>/ (--benchmark team;
+outputs go under the label <workflow_name>_team).
 """
 
 # ruff: noqa: E402
@@ -47,41 +49,33 @@ from manager_agent_gym.core.evaluation.common_evaluators import build_default_ev
 from manager_agent_gym.schemas.workflow_agents import AgentConfig
 from manager_agent_gym.schemas.preferences.rubric import RunCondition
 
-from examples.scenarios import SCENARIOS
+from examples.scenarios import get_scenario, base_scenario_name, TEAM_SUFFIX
 
 
 def create_workflow(name: str) -> Workflow:
-    if name not in SCENARIOS:
-        raise ValueError(f"Unknown workflow: {name}")
-    return SCENARIOS[name].create_workflow()
+    return get_scenario(name).create_workflow()
 
 
 def create_preferences(name: str) -> PreferenceWeights:
-    if name not in SCENARIOS:
-        raise ValueError(f"Unknown preferences: {name}")
-    return SCENARIOS[name].create_preferences()
+    return get_scenario(name).create_preferences()
 
 
 def create_team_timeline(name: str) -> dict[int, list]:
-    if name not in SCENARIOS:
-        raise ValueError(f"Unknown team timeline: {name}")
-    return SCENARIOS[name].create_team_timeline()
+    return get_scenario(name).create_team_timeline()
 
 
 def create_evaluator_to_measure_goal_achievement(name: str) -> Evaluator:
-    if name not in SCENARIOS:
-        raise ValueError(f"Unknown evaluator: {name}")
-    if not SCENARIOS[name].create_evaluator_to_measure_goal_achievement:
+    factory = get_scenario(name).create_evaluator_to_measure_goal_achievement
+    if not factory:
         raise ValueError(f"No evaluator to measure goal achievement for {name}")
-
-    return SCENARIOS[name].create_evaluator_to_measure_goal_achievement() #type: ignore
+    return factory()
 
 
 async def run_demo(
     offline_run_dir: str | None = None,
     workflow_name: str = "icaap",
     max_timesteps: int | None = None,
-    model_name: str = "o3",
+    model_name: str = "gpt-5-mini",
     base_output_dir: str | None = None,
     manager_agent_mode: str | None = None,
     seed: int = 42,
@@ -161,8 +155,8 @@ async def run_demo(
     stakeholder = create_stakeholder_agent(persona="balanced", preferences=preferences)
 
     # Apply scenario-defined preference dynamics (if provided)
-    spec = SCENARIOS.get(workflow_name)
-    if spec and spec.create_preference_update_requests:
+    spec = get_scenario(workflow_name)
+    if spec.create_preference_update_requests:
         stakeholder.apply_weight_updates(spec.create_preference_update_requests())
 
     max_steps = int(max_timesteps or settings.resolve_max_timesteps(fallback=50))
@@ -180,7 +174,7 @@ async def run_demo(
     )
 
     # Add scenario hard constraints (if any)
-    scenario_constraints = build_constraints_for_scenario(workflow_name)
+    scenario_constraints = build_constraints_for_scenario(base_scenario_name(workflow_name))
     if scenario_constraints is not None:
         default_evaluators.append(scenario_constraints)
 
@@ -317,9 +311,16 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Run an end-to-end example workflow")
     parser.add_argument("--workflow_name", required=True)
+    parser.add_argument(
+        "--benchmark",
+        choices=["original", "team"],
+        default="original",
+        help="original: examples/end_to_end_examples; team: the team-membership variant in "
+        "examples/end_to_end_examples_team (runs are labelled <workflow>_team)",
+    )
     parser.add_argument("--offline-run-dir", dest="offline_run_dir", default=None)
     parser.add_argument("--max-timesteps", dest="max_timesteps", type=int, default=None)
-    parser.add_argument("--model-name", dest="model_name", default="o3")
+    parser.add_argument("--model-name", dest="model_name", default="gpt-5")
     parser.add_argument("--output-dir", dest="output_dir", default=None)
     parser.add_argument("--manager-agent-mode", dest="manager_agent_mode", default=None)
     parser.add_argument("--seed", dest="seed", type=int, default=42)
@@ -350,6 +351,8 @@ if __name__ == "__main__":
         help="Number of random seeds to run sequentially (seed, seed+1, ...).",
     )
     args = parser.parse_args()
+    if args.benchmark == "team" and not args.workflow_name.endswith(TEAM_SUFFIX):
+        args.workflow_name += TEAM_SUFFIX
 
     async def _run_multi_seed() -> None:
         base_seed = int(args.seed)

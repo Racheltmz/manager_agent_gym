@@ -7,8 +7,8 @@
 #   scripts/create_team_benchmark.sh --stale                    convert every missing or stale workflow
 #   scripts/create_team_benchmark.sh --status                   list missing / current / stale workflows
 #
-# Env: CLAUDE_MODEL=<alias or id> to pick the model. Uses Claude, never the OpenAI API. Each run also
-# does gate validation: one extra Claude call per affected task and worker (see benchmark.md).
+# Env: CLAUDE_MODEL=<alias or id> to pick the model. Uses Claude, never the OpenAI API. Gate validation
+# (one Claude call per affected task and worker) is deferred; correct_agents is set by judgment.
 # Inside an interactive Claude Code session you can run /create-team-benchmark <workflow> instead.
 set -euo pipefail
 

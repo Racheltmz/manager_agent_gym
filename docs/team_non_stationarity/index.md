@@ -41,6 +41,18 @@ about each roster change and must delegate accordingly.
 - AI agents only (no `HumanAgentConfig`).
 - Workers share **one base model** (for now) and are differentiated only by their prompt.
 
+## Models
+
+| Role | Model | Set in |
+|---|---|---|
+| Manager | `gpt-5` | `--model-name` (default in `examples/run_examples.py`, `MAG_MODEL_NAME` fallback in the manager factory, `scripts/run.sh`, `scripts/run_all.sh`) |
+| Worker | `gpt-5-mini` | each worker's `AIAgentConfig.model_name` in the scenario's `team.py` (`WORKER_MODEL`) |
+| Stakeholder | `o3` | `examples/common_stakeholders.py` (used by the runner) and the scenario's `StakeholderConfig` |
+| LLM judge | `o3` | `WorkflowRubric.llm_model` default, `validation_rules` default |
+
+The team metrics do not use the LLM judge (see [`metrics.md`](metrics.md)); the engine still runs its
+rubrics each timestep unless they are removed from the run.
+
 ## Research gap
 
 No existing benchmark evaluates LLM manager agents on delegation under team-membership

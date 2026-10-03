@@ -8,7 +8,7 @@ The skill does the creative conversion. This tool does the parts that must be ex
   reset <name>        back up and delete the generated scenario, so a rerun starts from scratch
   check <name>        static checks of a generated scenario against the benchmark rules
   stamp <name>        record the hashes of the inputs a scenario was generated from
-  gate-run <name>     gate validation: Claude plays every worker on every affected task, the
+  gate-run <name>     (DEFERRED, needs --enable) gate validation: Claude plays every worker on every affected task, the
                       outputs are scored against the checklist patterns, and the correct workers
                       are derived from the pass/fail table
   gate-score <name>   rescore the saved gate outputs without calling Claude
@@ -397,7 +397,10 @@ def check_scenario(lay: Layout, name: str) -> tuple[list[str], list[str]]:
     # Gate validation result, if it has been run.
     table = _read_gate_table(lay, name)
     if table is None:
-        warnings.append("gate validation has not been run for this scenario (gate-run)")
+        warnings.append(
+            "correct_agents is a judgment from task and worker descriptions; gate validation is deferred "
+            "(see benchmark.md, Gate validation)"
+        )
     else:
         gate_errors, _ = gate_verdict(spec, changes, table["cells"])
         errors.extend(f"gate validation: {e}" for e in gate_errors)
@@ -671,12 +674,16 @@ def main(argv: list[str] | None = None) -> int:
         if c == "gate-run":
             g.add_argument("--model", default=DEFAULT_GATE_MODEL, help="Claude model alias or id (default: sonnet)")
             g.add_argument("--jobs", type=int, default=4, help="parallel Claude calls (default: 4)")
+            g.add_argument("--enable", action="store_true", help="required: gate validation is deferred because it costs one Claude call per task per worker")
             g.add_argument("--force", action="store_true", help="regenerate replies even if saved ones are current")
     args = ap.parse_args(argv)
     lay = Layout()
     if args.cmd == "status":
         return cmd_status(lay, args.names)
     if args.cmd == "gate-run":
+        if not args.enable:
+            print("gate-run is deferred: correct_agents is set by judgment. Pass --enable to run it (one Claude call per affected task per worker).")
+            return 2
         return cmd_gate(lay, args.name, True, args.model, args.jobs, args.force)
     if args.cmd == "gate-score":
         return cmd_gate(lay, args.name, False, DEFAULT_GATE_MODEL, 1, False)

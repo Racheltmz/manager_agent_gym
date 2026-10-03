@@ -26,10 +26,11 @@ should hold it.
     validity tool, never a baseline in reported results.
 - **Scorer-only.** Never exposed to the manager (it sees only task descriptions and public
   `agent_capabilities`).
-- **Derived from gate validation** (`task × worker → pass/fail`, see
-  [`benchmark.md`](benchmark.md#7-gate-validation)), which the conversion skill runs with Claude
-  standing in for each worker. The spec must match the derived set (the authoring check enforces
-  it). It is verified on that proxy, not on the model used in manager runs.
+- **Set by judgment for now**: the converting model maps each affected task's description to the
+  workers' descriptions and private content. Gate validation (`task × worker → pass/fail`, see
+  [`benchmark.md`](benchmark.md#7-gate-validation)) would derive it from worker outputs but is
+  deferred; if a gate table exists, the spec must match it (the authoring check enforces it).
+  Either way it is not verified on the model used in manager runs.
 - Control tasks need no entry.
 
 ## Affected tasks and control tasks

@@ -85,8 +85,8 @@ set aside until a prompt-based granularity limit is shown to be reliable.
   nothing the manager must do, and dropping a task would cost nothing.
 - Expected good behavior: stop assigning to the departed worker and route the unassigned gated task
   to the remaining worker that holds the matching content.
-- Validate the gate by running that task with every non-matching worker and confirming it fails the
-  checklist (section 7).
+- Validate the gate: no non-matching worker should be able to pass the checklist (judged for now;
+  measured by gate validation when re-adopted, section 7).
 
 Design note: a leave after which **no** remaining worker holds the needed content makes the task
 impossible. That is a different scenario ("graceful degradation"); keep it as a separately labelled
@@ -150,8 +150,13 @@ removes or renames an affected task must score 0 for it, not crash the metrics (
 
 ## 7. Gate validation
 
+> **Status: deferred.** Considered and built, but not used for now because it costs one Claude call
+> per affected task per worker. Conversion instead sets `correct_agents` by judgment: the converting
+> model reads each affected task's description against each worker's description and private content
+> and applies the pass rules below as a self-check. The mapping is then unverified by worker output.
+> Run `gate-run <workflow> --enable` only when this is re-adopted.
+
 Confirms that each gate discriminates, and **derives the task-to-worker mapping** from the result.
-It runs as part of conversion (step *Gate validation* of the skill), with no separate ask.
 
 **How it runs** (`scripts/team_benchmark.py gate-run <workflow>`):
 
@@ -205,7 +210,7 @@ converted to AI agents). Work to do:
   unassigned task still gated to a remaining worker
 - [ ] Keep a set of untouched control tasks
 - [ ] Write the predefined timeline
-- [ ] Run gate validation (done by the skill; every gate discriminates and `correct_agents` matches the table)
+- [ ] Judge the task-to-worker mapping (done by the skill; gate validation is deferred)
 
 ## 9. Generating scenarios from this doc
 
@@ -230,7 +235,7 @@ it tests whether the benchmark **discriminates between managers**.
 | Layer | Tests | How | Cost | Status |
 |---|---|---|---|---|
 | Static check | The scenario follows the structural rules (AI-only roster, spec matches timeline, checklists have patterns, controls exist, `correct_agents` matches the gate table) | `scripts/team_benchmark.py check <workflow>`, run by the skill | Free, no LLM | Built |
-| Gate validation | Each gate discriminates between workers, and the task-to-worker mapping is derived from the result (see *Gate validation*) | `scripts/team_benchmark.py gate-run <workflow>`, run by the skill | One Claude call per task per worker | Built |
+| Gate validation | Each gate discriminates between workers, and the task-to-worker mapping is derived from the result (see *Gate validation*) | `scripts/team_benchmark.py gate-run <workflow> --enable` | One Claude call per task per worker | Built, deferred (mapping is judged instead) |
 | Manager runs | Scores respond to delegation: `random` scores clearly below its control baseline on the affected tasks, and `cot` scores above `random` on them | Run `cot` and `random` over several seeds, read the post-change score, baseline and disruption cost from `metrics.md` | OpenAI API calls, only on an explicit ask | Not built: no pass/fail rule or dashboard indicator yet |
 
 Notes:

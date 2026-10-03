@@ -16,7 +16,7 @@ A scenario opts in by providing, under examples/end_to_end_examples_team/<workfl
     (TaskRequirement with a `pattern`) for every affected task
 
 Usage:
-    python dashboard/analysis/analyze_team_changes.py --workflow legal_m_and_a --mode cot random
+    python dashboard/analysis/analyze_team_changes.py --workflow legal_m_and_a_team --mode cot random
 """
 
 from __future__ import annotations
@@ -44,6 +44,8 @@ from manager_agent_gym.core.evaluation.team_change_metrics import (  # noqa: E40
 )
 from manager_agent_gym.schemas.core.tasks import TaskRequirement  # noqa: E402
 
+from examples.scenarios import base_scenario_name  # noqa: E402
+
 SCENARIO_PACKAGE = "examples.end_to_end_examples_team"
 OUTPUT_NAME = "team_change_metrics.json"
 # Managers benchmarked for this focus; assign_all is excluded (docs/team_non_stationarity/index.md).
@@ -51,7 +53,9 @@ DEFAULT_MODES = ["cot", "random"]
 
 
 def load_scenario(workflow: str) -> tuple[TeamChangeSpec, dict[str, list[TaskRequirement]]]:
-    """Import the scenario's spec and its tasks' checklists (by task name)."""
+    """Import the scenario's spec and its tasks' checklists (by task name).
+    `workflow` may be the run label (`legal_m_and_a_team`) or the scenario name."""
+    workflow = base_scenario_name(workflow)
     try:
         spec_mod = importlib.import_module(f"{SCENARIO_PACKAGE}.{workflow}.team_change_spec")
     except ModuleNotFoundError as e:

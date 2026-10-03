@@ -18,12 +18,18 @@ from manager_agent_gym.schemas.preferences.preference import (
 )
 
 
+# Benchmark model setup: manager gpt-5, workers gpt-5-mini, stakeholder o3, LLM judge o3.
+WORKER_MODEL = "gpt-5-mini"
+STAKEHOLDER_MODEL = "o3"
+
+
 def _ai(agent_id: str, role: str, house: str, description: str, capabilities: list[str]) -> AIAgentConfig:
     """A worker whose prompt is its role plus the house format or rule only it follows."""
     return AIAgentConfig(
         agent_id=agent_id,
         agent_type="ai",
         system_prompt=f"{role} {house}",
+        model_name=WORKER_MODEL,
         agent_description=description,
         agent_capabilities=capabilities,
     )
@@ -278,7 +284,7 @@ def create_legal_mna_team_configs():
             "You are the Acquirer General Counsel. You prioritize early momentum, then high-quality drafts and "
             "governance, finishing with strict compliance at signing/closing. Approve key trade-offs."
         ),
-        model_name="o3",
+        model_name=STAKEHOLDER_MODEL,
         name="Acquirer GC (Stakeholder)",
         role="Executive Stakeholder",
         persona_description="Pragmatic, governance-minded, risk-aware; values crisp redline logs and evidence-linked schedules.",

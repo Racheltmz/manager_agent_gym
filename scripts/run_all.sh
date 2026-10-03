@@ -11,8 +11,14 @@
 # examples/run_examples.py, which already wires create_team_timeline() output
 # into AgentRegistry.schedule_agent_add/remove().
 #
+# Benchmark choice (first argument or BENCHMARK=...):
+#   original (default): the 3 scenarios above x cot, random, assign_all, from examples/end_to_end_examples
+#   team: the team-membership variants in examples/end_to_end_examples_team (legal_m_and_a) x cot, random.
+#         assign_all is excluded there (docs/team_non_stationarity/index.md). Runs are labelled
+#         <workflow>_team, so they never overwrite the original runs.
+#
 # Usage:
-#   OPENAI_API_KEY=sk-... ./scripts/run_all.sh
+#   OPENAI_API_KEY=sk-... ./scripts/run_all.sh [original|team]
 # or populate .env at repo root with OPENAI_API_KEY=... beforehand.
 
 set -euo pipefail
@@ -20,8 +26,12 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-WORKFLOWS=(legal_m_and_a marketing_campaign orsa)
-MODES=(cot random assign_all)
+BENCHMARK="${1:-${BENCHMARK:-original}}"
+case "$BENCHMARK" in
+  original) WORKFLOWS=(legal_m_and_a marketing_campaign orsa); MODES=(cot random assign_all); LABEL_SUFFIX="" ;;
+  team)     WORKFLOWS=(legal_m_and_a);                         MODES=(cot random);            LABEL_SUFFIX="_team" ;;
+  *) echo "BENCHMARK must be 'original' or 'team', got '$BENCHMARK'" >&2; exit 1 ;;
+esac
 MODEL_NAME="gpt-5"
 SEED=42
 MAX_TIMESTEPS="${MAX_TIMESTEPS:-}"   # leave empty to use each scenario's natural length / default (50)
@@ -42,14 +52,15 @@ fi
 
 for mode in "${MODES[@]}"; do
   for wf in "${WORKFLOWS[@]}"; do
-    echo "==== workflow=$wf manager_mode=$mode model=$MODEL_NAME seed=$SEED ===="
-    RUN_DIR="$OUT_ROOT/$mode/$wf/run_seed_$SEED"
+    echo "==== benchmark=$BENCHMARK workflow=$wf manager_mode=$mode model=$MODEL_NAME seed=$SEED ===="
+    RUN_DIR="$OUT_ROOT/$mode/${wf}${LABEL_SUFFIX}/run_seed_$SEED"
     if [[ -d "$RUN_DIR" ]]; then
       echo "Clearing existing run directory: $RUN_DIR"
       rm -rf "$RUN_DIR"
     fi
-    LOG_FILE="$OUT_ROOT/logs/${wf}__${mode}.log"
+    LOG_FILE="$OUT_ROOT/logs/${wf}${LABEL_SUFFIX}__${mode}.log"
     uv run python examples/run_examples.py \
+      --benchmark "$BENCHMARK" \
       --workflow_name "$wf" \
       --manager-agent-mode "$mode" \
       --model-name "$MODEL_NAME" \
@@ -61,5 +72,5 @@ for mode in "${MODES[@]}"; do
 done
 
 echo
-echo "All 9 runs complete. Outputs under: $OUT_ROOT/<manager_mode>/<workflow_name>/run_<timestamp>/"
-echo "Next: python dashboard/analysis/analyze_runs.py"
+echo "All $(( ${#WORKFLOWS[@]} * ${#MODES[@]} )) runs complete. Outputs under: $OUT_ROOT/<manager_mode>/<workflow_name>/run_<timestamp>/"
+echo "Next: scripts/eval.sh $BENCHMARK"

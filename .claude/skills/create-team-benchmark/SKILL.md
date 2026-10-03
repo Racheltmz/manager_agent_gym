@@ -20,9 +20,9 @@ Convert `examples/end_to_end_examples/<name>/` into `examples/end_to_end_example
 - **Never run** `scripts/run.sh`, `scripts/run_all.sh`, `examples/run_examples.py`, or anything else
   that calls the OpenAI API. Those cost money and need an explicit ask from the user in their
   current message.
-- **Gate validation is part of this skill** (step 7). It uses Claude only, through
-  `scripts/team_benchmark.py gate-run`, never the OpenAI API. You never write a worker's reply
-  yourself and never show a worker the checklist patterns: only the tool's calls produce replies.
+- **Gate validation is deferred.** Do not run `scripts/team_benchmark.py gate-run` (it refuses
+  without `--enable`, because it costs one Claude call per affected task per worker). Step 7 sets
+  `correct_agents` by your own judgment instead. Never run it unless the user's current message asks.
 - Write only inside `examples/end_to_end_examples_team/<name>/`, plus one row in `UPDATES.md`
   (step 8). Do not edit the source scenario, `examples/scenarios.py`, or any other scenario.
 - **A rerun starts from scratch.** Step 4 deletes the existing output. Do not try to preserve or
@@ -74,15 +74,14 @@ Convert `examples/end_to_end_examples/<name>/` into `examples/end_to_end_example
    - `workflow.py`: the source tasks with checklists (`TaskRequirement` with a `pattern`) on the
      gated, affected and some control tasks. Keep source task names stable, because the metrics look
      tasks up by name. Do not pre-assign tasks to workers.
-   - `team.py`: AI-only worker configs with private content in `system_prompt` and accurate
+   - `team.py`: AI-only worker configs (`model_name="gpt-5-mini"`, the stakeholder `o3`; see *Models* in `index.md`) with private content in `system_prompt` and accurate
      capabilities, and `create_team_timeline()` returning `{timestep: [(action, config, reason)]}`
      in the same shape as the source (a `remove` takes the config, as the source does).
    - `preferences.py`: adapted from the source. Drop references to agents that were removed or
      renamed, and anything human-specific. Leave the evaluators otherwise unchanged.
    - `team_change_spec.py`: `create_team_change_spec()` following the *Scenario contract*: events,
      affected tasks by name, `correct_agents` (scorer-only; diagnostics and the authoring check, not the headline metrics),
-     and `cases`. Write your intended `correct_agents` now; step 7 replaces it with the mapping
-     derived from gate validation.
+     and `cases`. Write your intended `correct_agents` now; step 7 confirms it by judgment.
    - `CONVERSION.md`: what changed from the source, the rules applied, the plan from step 3, a table
      of every source join and leave with its disposition (converted or dropped, and why), the
      leave-timing reasoning, assumptions, and open items.
@@ -94,22 +93,17 @@ Convert `examples/end_to_end_examples/<name>/` into `examples/end_to_end_example
    types* and *Gated tasks* yourself and fix any gap. Also walk through **every agent and every
    task** against *Rules for the rest of the scenario*, not only the ones events name. Carry every warning into the report.
 
-7. **Gate validation.** Run `uv run python scripts/team_benchmark.py gate-run <name>`. Claude
-   (Sonnet, `claude -p` with no tools) plays every worker that can receive each affected task with the
-   worker's own system prompt, and each reply is scored against the task's checklist patterns. It makes one
-   call per affected task and eligible worker, saves the replies, and prints who passes each task, the derived
-   `correct_agents`, and `GATE OK` or the errors. See *Gate validation* in `benchmark.md` for the
-   pass rules.
-   - Set `correct_agents` in `team_change_spec.py` to the derived mapping, not to your plan.
-   - On errors (a non-holder passes, the joiner fails its own gate, nobody remaining can pass),
-     fix the cause in `team.py` or `workflow.py`: for example a task description that leaks the
-     format, or private content that is not specific enough. **Never loosen or tighten a pattern
-     just to make a cell pass or fail.** Rerun `check`, then `gate-run` (unchanged replies are
-     reused). Stop after 3 failed attempts and report what is still wrong.
-   - To rescore saved replies without any Claude call, run
-     `uv run python scripts/team_benchmark.py gate-score <name>`.
-   - Finish with `check` printing `OK` and no gate warning.
-   - Put the pass table summary and the derived mapping in `CONVERSION.md`.
+7. **Map tasks to workers by judgment** (gate validation is deferred). No Claude calls. For every
+   affected task and every worker that can receive it (roster after the event, later joiners, and the
+   leaver of a leave event), read the task name and description and the worker's `system_prompt` and
+   capabilities, and decide whether that worker holds the private content the checklist patterns need.
+   - Set `correct_agents` to the workers that would pass and are on the roster after the event.
+   - Apply the pass rules from *Gate validation* in `benchmark.md` as a self-check: join-affected,
+     only the joiner holds the content; leave-affected, the leaver and at least one remaining worker
+     hold it. If the descriptions do not make that clear (the task description leaks the format, or
+     private content is vague), fix `team.py` or `workflow.py`. Never change a pattern to fit the mapping.
+   - Put a task × worker table (holds / does not hold, with the one-line reason) in `CONVERSION.md`,
+     labelled as a judgment and not a measured result.
 
 8. **Stamp and record.** Run `uv run python scripts/team_benchmark.py stamp <name>`. Then update
    the `UPDATES.md` Benchmark row "Team scenarios generated by /create-team-benchmark" so it lists
@@ -118,11 +112,10 @@ Convert `examples/end_to_end_examples/<name>/` into `examples/end_to_end_example
 9. **Report**, in at most 25 lines: the workflow; the rules applied (and any doc/skill conflict); the
    case rotation; gated tasks; events kept against the source count and each one dropped with its
    reason; controls; check result and warnings; the files written; the
-   backup path if one was made; the gate validation result (who passes each gated task); and what is
+   backup path if one was made; the judged mapping (who holds each gated task's content); and what is
    **not** done:
-   - the scenario is not registered in `examples/scenarios.py`, so it cannot be run yet;
-   - gate validation used Claude as a stand-in worker, one reply per cell, with no upstream
-     resources, so it verifies the gates on a proxy and not on the model used in manager runs;
+   - the scenario has not been run: `scripts/run.sh team` (or `examples/run_examples.py --benchmark team`) runs it, and needs no registration, but calls the OpenAI API and needs an explicit ask;
+   - gate validation was not run: `correct_agents` is a judgment from descriptions, unverified by any worker output;
    - engine support that the benchmark assumes but may not exist yet (see the planned rows in
      `UPDATES.md`: roster-change notice, restarting a handed-over running task).
 
@@ -133,6 +126,6 @@ Convert `examples/end_to_end_examples/<name>/` into `examples/end_to_end_example
   scenarios are now stale, then rerun them.
 - **Change the procedure:** edit this file. Its hash is part of each scenario's stamp, so every
   scenario shows as stale afterwards.
-- **Mechanical checks and gate validation** are in `scripts/team_benchmark.py`. They mirror the benchmark rules, and
+- **Mechanical checks and the deferred gate validation** are in `scripts/team_benchmark.py`. They mirror the benchmark rules, and
   the tool warns when the *Change-affected cases* table gains or loses a case so `KNOWN_CASES`
   can be updated.

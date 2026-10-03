@@ -385,10 +385,16 @@ def test_rescoring_without_a_generator_uses_saved_replies_only(tmp_path):
     assert any("no reply" in e for e in errors)
 
 
+def test_gate_run_is_deferred_unless_enabled(tmp_path, capsys):
+    make_repo(tmp_path)
+    assert tool.main(["gate-run", "wf1"]) == 2
+    assert "deferred" in capsys.readouterr().out
+
+
 def test_check_warns_when_gate_validation_has_not_run_and_errors_when_it_failed(tmp_path):
     lay = make_repo(tmp_path)
     errors, warnings = tool.check_scenario(lay, "wf1")
-    assert errors == [] and any("gate validation has not been run" in w for w in warnings)
+    assert errors == [] and any("gate validation is deferred" in w for w in warnings)
     tool.gate_validate(lay, "wf1", fake_claude({**GOOD, "Gated join task": {"w3", "w2"}}))
     errors, _ = tool.check_scenario(lay, "wf1")
     assert any(e.startswith("gate validation:") and "does not discriminate" in e for e in errors)
