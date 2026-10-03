@@ -129,8 +129,8 @@ Run `uv run python scripts/team_benchmark.py plan <name>`; its `status.state` pi
    **not** done:
    - the scenario has not been run: `scripts/run.sh team` (or `examples/run_examples.py --benchmark team`) runs it, and needs no registration, but calls the OpenAI API and needs an explicit ask;
    - gate validation was not run: `correct_agents` is a judgment from descriptions, unverified by any worker output;
-   - engine support that the benchmark assumes but may not exist yet (see the planned rows in
-     `UPDATES.md`: roster-change notice, restarting a handed-over running task).
+   - engine support the benchmark assumes: the roster-change notice and restart-on-reassign are built
+     for team runs (see `UPDATES.md`); check the planned rows there for anything still missing.
 
 ## Update steps
 

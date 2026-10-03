@@ -254,8 +254,8 @@ Notes:
 
 ## Open questions
 
-- How is a running task handed over in the engine: does reassigning a RUNNING task cancel and
-  restart it, or does it have to be a new action? Today it only overwrites `assigned_agent_id`.
+- ~~How is a running task handed over in the engine?~~ Answered: in team runs, reassigning a
+  RUNNING task cancels its run and restarts it fresh with the new worker (see `known_bugs.md`, ML-052).
 - Checklists use `TaskRequirement` in
   [`tasks.py`](../../manager_agent_gym/schemas/core/tasks.py): each item has a regex `pattern`
   matched against the task output (`passes()`). The schema and the evaluator that turns items into

@@ -40,6 +40,7 @@ from ...schemas.preferences.preference import (
     Preference,
 )
 from ...schemas.preferences.rubric import RunCondition
+from ...schemas.execution.manager import RosterChange
 
 # from ...schemas.evaluation.workflow_quality import CoordinationDeadtimeMetrics
 from ..communication.service import CommunicationService
@@ -122,6 +123,9 @@ class WorkflowExecutionEngine:
         reward_aggregator: BaseRewardAggregator[object] | None = None,
         reward_projection: RewardProjection[object] | None = None,
         skip_llm_judge: bool = False,
+        team_awareness: bool = False,
+        restart_on_reassign: bool = False,
+        log_manager_context: bool = True,
     ):
         self.workflow = workflow
         self.agent_registry = agent_registry
@@ -172,6 +176,14 @@ class WorkflowExecutionEngine:
             raise ValueError("Manager agent must be provided")
 
         self.manager_agent.configure_seed(self.seed)
+        # Team benchmark: tell the manager about roster changes (and flag failed actions in its history)
+        self.team_awareness = team_awareness
+        # One file per timestep with the manager's input (prompts) and output (action + result)
+        self.log_manager_context = log_manager_context
+        # Team benchmark: reassigning a RUNNING task cancels the run and restarts it with the new
+        # agent; assigns of COMPLETED / FAILED / composite tasks are rejected.
+        self.workflow.strict_assignment = restart_on_reassign
+        self.manager_agent.set_team_awareness(team_awareness)
         self.stakeholder_agent.configure_seed(self.seed)
 
         self.output_writer = WorkflowSerialiser(
@@ -408,12 +420,21 @@ class WorkflowExecutionEngine:
         timestep = self.current_timestep
 
         agent_coordination_changes = self._check_and_apply_agent_changes()
+        if self.team_awareness and self.manager_agent:
+            self.manager_agent.set_roster_changes(
+                [
+                    RosterChange(**c)
+                    for c in self.agent_registry.change_log
+                    if c["timestep"] > 0
+                ]
+            )
 
         manager_action = None
         if self.manager_agent:
             self.execution_state = ExecutionState.WAITING_FOR_MANAGER
             # Unified RL-style step: agent constructs observation internally
             done_flag = self._is_terminal_state() or self.workflow.is_complete()
+            self.manager_agent.last_trace = None
             manager_action = await self.manager_agent.step(
                 workflow=self.workflow,
                 execution_state=self.execution_state,
@@ -430,9 +451,16 @@ class WorkflowExecutionEngine:
                 action_result = await manager_action.execute(
                     self.workflow, self.communication_service
                 )
-            except Exception:
+            except Exception as exc:
                 logger.error("failed to execute manager action", exc_info=True)
-                action_result = None
+                # Keep the cause so the manager's history can show why the action failed.
+                action_result = ActionResult(
+                    summary=f"Failed: {type(exc).__name__}: {str(exc)[:200]}",
+                    kind="failed_action",
+                    data={},
+                    action_type=manager_action.action_type,  # type: ignore[attr-defined]
+                    success=False,
+                )
 
             # Delegate action logging to the manager agent hook
             self.manager_agent.on_action_executed(
@@ -440,6 +468,10 @@ class WorkflowExecutionEngine:
                 action=manager_action,
                 action_result=action_result,
             )
+            if self.log_manager_context:
+                self.output_writer.save_manager_context(
+                    timestep, self.manager_agent, manager_action, action_result
+                )
 
         self.execution_state = ExecutionState.EXECUTING_TASKS
         tasks_started, tasks_completed, tasks_failed = await self._execute_ready_tasks()
@@ -621,6 +653,8 @@ class WorkflowExecutionEngine:
         tasks_completed = []
         tasks_failed = []
 
+        await self._restart_reassigned_tasks()
+
         if self.running_tasks:
             done_tasks, pending_tasks = await asyncio.wait(
                 self.running_tasks.values(),
@@ -751,10 +785,38 @@ class WorkflowExecutionEngine:
                     # READY -> RUNNING when the engine actually starts execution
                     task.status = TaskStatus.RUNNING
                     task.started_at = datetime.now()
+                    task.started_timestep = self.current_timestep
 
                     tasks_started.append(task.id)
 
         return tasks_started, tasks_completed, tasks_failed
+
+    async def _restart_reassigned_tasks(self) -> None:
+        """Cancel the run of every RUNNING task the manager reassigned and return it to READY.
+
+        The normal start loop then starts it again from scratch with the newly assigned agent. The
+        cancelled run never reaches the completion path, so its output is dropped.
+        """
+        if not self.workflow.strict_assignment:
+            return
+        for task_id, running in list(self.running_tasks.items()):
+            task = self.workflow.tasks.get(task_id)
+            if task is None or not task.restart_requested:
+                continue
+            running.cancel()
+            await asyncio.gather(running, return_exceptions=True)
+            del self.running_tasks[task_id]
+            task.restart_requested = False
+            task.restart_count += 1
+            task.status = TaskStatus.READY
+            task.started_at = None
+            task.execution_notes.append(
+                f"Restarted at t={self.current_timestep}: reassigned to {task.assigned_agent_id}"
+            )
+        # A request on a task that is not running has nothing to cancel
+        for task in self.workflow.tasks.values():
+            if task.restart_requested and task.id not in self.running_tasks:
+                task.restart_requested = False
 
     def _get_task_resources(self, task: Task) -> list[Resource]:
         """

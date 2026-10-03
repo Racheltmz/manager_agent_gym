@@ -36,6 +36,11 @@ class OutputConfig(BaseModel):
         description="Directory for detailed execution logs (default: base_output_dir/execution_logs)",
     )
 
+    manager_context_dir: Path | None = Field(
+        default=None,
+        description="Directory for the manager's per-timestep input and output (default: base_output_dir/manager_context)",
+    )
+
     # Run-specific settings
     create_run_subdirectory: bool = Field(
         default=True,
@@ -70,6 +75,9 @@ class OutputConfig(BaseModel):
         if self.execution_logs_dir is None:
             self.execution_logs_dir = run_base / "execution_logs"
 
+        if self.manager_context_dir is None:
+            self.manager_context_dir = run_base / "manager_context"
+
     def ensure_directories_exist(self) -> None:
         """Create all configured output directories."""
         directories = [
@@ -78,6 +86,7 @@ class OutputConfig(BaseModel):
             self.workflow_dir,
             self.evaluation_dir,
             self.execution_logs_dir,
+            self.manager_context_dir,
         ]
 
         for directory in directories:
@@ -90,6 +99,12 @@ class OutputConfig(BaseModel):
         if self.timestep_dir is None:
             raise ValueError("timestep_dir is not configured")
         return self.timestep_dir / filename
+
+    def get_manager_context_file_path(self, timestep: int) -> Path:
+        """Get the file path for the manager's input and output at a timestep."""
+        if self.manager_context_dir is None:
+            raise ValueError("manager_context_dir is not configured")
+        return self.manager_context_dir / f"timestep_{timestep:04d}.json"
 
     def get_final_metrics_path(self) -> Path:
         """Get the file path for final metrics."""

@@ -90,6 +90,11 @@ class Workflow(BaseModel):
         default=False, description="Whether the workflow is currently active"
     )
 
+    # Team benchmark: assigning a RUNNING task to a different agent cancels the run and restarts it
+    # with the new agent; COMPLETED, FAILED and composite tasks are rejected. Off: the legacy
+    # behaviour, where assign only overwrites `assigned_agent_id` and always reports success.
+    strict_assignment: bool = Field(default=False)
+
     # Metrics for evaluation
     total_cost: float = Field(
         default=0.0, description="Cumulative actual cost reported by agents"

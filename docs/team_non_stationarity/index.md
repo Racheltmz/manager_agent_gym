@@ -47,7 +47,7 @@ about each roster change and must delegate accordingly.
 |---|---|---|
 | Manager | `gpt-5-mini` | `--model-name` (default in `examples/run_examples.py`, `MAG_MODEL_NAME` fallback in the manager factory, `scripts/run.sh`, `scripts/run_all.sh`) |
 | Worker | `gpt-5-mini` | each worker's `AIAgentConfig.model_name` in the scenario's `team.py` (`WORKER_MODEL`) |
-| Stakeholder | `gpt-5.4-mini`, medium reasoning | `examples/common_stakeholders.py` (used by the runner; `STAKEHOLDER_MODEL`, `STAKEHOLDER_REASONING`) and the scenario's `StakeholderConfig`; `StakeholderConfig.reasoning_effort` |
+| Stakeholder | `gpt-5.4-mini`, provider-default reasoning (the installed LiteLLM rejects `reasoning_effort` for the gpt-5 family) | `examples/common_stakeholders.py` (used by the runner; `STAKEHOLDER_MODEL`) and the scenario's `StakeholderConfig`; `StakeholderConfig.reasoning_effort` |
 | LLM judge | not run for the team benchmark (`o3` stays the default for the original one) | `skip_llm_judge` on the engine, set by `examples/run_examples.py` when the run label ends in `_team` |
 
 The team metrics do not use the LLM judge (see [`metrics.md`](metrics.md)), so team runs do not schedule
@@ -109,7 +109,7 @@ other.
   durations and the dependency graph that every task assigned to the worker is finished by then.
   This also avoids the engine silently never starting a task assigned to a missing agent (see
   [`known_bugs.md`](known_bugs.md)).
-- When the manager hands a running task to another worker, who cancels the current run and
-  restarts it? Today `assign_task` only overwrites `assigned_agent_id` (see [`known_bugs.md`](known_bugs.md)).
+- ~~When the manager hands a running task to another worker, who cancels the current run and
+  restarts it?~~ Answered: the engine, in team runs (see [`known_bugs.md`](known_bugs.md), ML-052).
 - Does the manager have a way to see that a reassignment happened? Disruption cost depends on it
   being observable.

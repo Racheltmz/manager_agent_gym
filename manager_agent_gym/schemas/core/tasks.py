@@ -107,6 +107,15 @@ class Task(BaseModel):
         default=None, description="ID of the agent currently assigned to this task"
     )
 
+    # Restart on reassign (see Workflow.strict_assignment): the manager reassigned this RUNNING
+    # task to another agent, so the engine cancels the current run and starts it fresh.
+    restart_requested: bool = Field(
+        default=False, description="Engine should cancel the current run and restart"
+    )
+    restart_count: int = Field(
+        default=0, description="How many times the task was restarted after a reassign"
+    )
+
     # Execution tracking
     execution_notes: list[str] = Field(
         default_factory=list,
@@ -155,6 +164,9 @@ class Task(BaseModel):
 
     # Timestamps
     started_at: datetime | None = Field(default=None)
+    started_timestep: int | None = Field(
+        default=None, description="Timestep at which the engine last started this task"
+    )
     completed_at: datetime | None = Field(default=None)
     deps_ready_at: datetime | None = Field(
         default=None, description="When all dependencies became satisfied"

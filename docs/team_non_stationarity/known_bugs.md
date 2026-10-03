@@ -37,13 +37,13 @@ apply.
 
 | ✓ | ID | Bug | Impact | Hits | Verified | Status |
 |---|---|---|---|---|---|---|
-| [ ] | ML-052 | `AssignTaskAction` succeeds as a no-op on RUNNING / COMPLETED / unready tasks | Blocker | Disruption cost, `assigned_correctly` | Verified | Open |
+| [x] | ML-052 | `AssignTaskAction` succeeds as a no-op on RUNNING / COMPLETED / unready tasks | Blocker | Disruption cost, `assigned_correctly` | Verified | Fixed (team runs) |
 | [ ] | ML-005 | Fabricated default resource counted as success | Blocker | Checklist false passes | Verified (content unchecked) | Open |
 | [x] | ML-050 | Cost lookup inside the success path discards completed work | Blocker | Phantom FAILED, score 0 | Verified | Fixed |
 | [ ] | ML-051 | FAILED is absorbing; no retry | High | Downstream tasks starve | Verified | Open |
 | [ ] | ML-049 | One manager action per timestep; budget runs out | High | Affected tasks unfinished, score 0 | Per sheet | Open |
 | [ ] | ML-092 | Seed never reaches the Agents SDK; runs are not reproducible | High | Multi-seed comparison | Per sheet | Open |
-| [ ] | ML-053 | Engine rejection never reaches the manager | High | Manager cannot learn it failed | Verified | Open |
+| [x] | ML-053 | Engine rejection never reaches the manager | High | Manager cannot learn it failed | Verified | Fixed for `cot` (team runs) |
 | [ ] | ML-003 | COMPLETED = "call returned without raising" | High | Completion-based reporting | Verified | Accepted |
 | [ ] | ML-015 | Phantom completions, no agent / no start | Medium | Baseline and affected tasks | Per sheet | Open |
 | [ ] | ML-075 | Read-tracking never called; stakeholder reply loop | Medium | Manager wastes timesteps | Verified (no callers) | Open |
@@ -82,9 +82,18 @@ rejects COMPLETED / FAILED tasks; (b) metrics only: count a control-task move on
 was not finished at the time. (b) alone cannot fix the running-task case, because the output
 provenance is wrong.
 
-- [ ] Decide (a) or (b)
-- [ ] Add a regression test in [`tests/test_team_change_metrics.py`](../../tests/test_team_change_metrics.py)
-- Notes:
+- [x] Decide (a) or (b): (a), built for team runs only (`Workflow.strict_assignment`, engine
+  `restart_on_reassign`; the original benchmark keeps the legacy behaviour). A RUNNING task handed
+  to another worker is cancelled and restarted fresh (output of the cancelled run dropped,
+  `restart_count` recorded); COMPLETED, FAILED and composite assigns are rejected with a cause;
+  reassigning to the same worker is a no-op. Unready PENDING tasks can still be pre-assigned, which
+  is legitimate.
+- [x] Regression tests: `tests/test_assign_restart.py` and
+  `tests/integration/test_engine_restart_on_reassign.py`. Because a rejected assign leaves
+  `assigned_agent_id` unchanged, no false control-task move is recorded, so the metrics needed no
+  change.
+- Notes: a restart on a running control task still counts as a move, correctly: it changed worker
+  and cost a rerun.
 
 ### ML-005: fabricated default resource (Blocker)
 
@@ -173,9 +182,15 @@ without setting `self.success` / `self.result_summary`.
 no signal. This matters for the planned roster-change observation: telling the manager about
 events does not help if its follow-up actions fail silently.
 
-- [ ] Surface the engine verdict in the manager's next observation when building the roster-change
-  field
-- Notes:
+- [x] Surface the engine verdict in the manager's next observation: the `cot` history now shows
+  `[FAILED]` and the cause (team runs only); causes are short, and bulk assigns that skip entries
+  say why
+- [x] Assigns that did nothing but report success (ML-052) are now rejected or reported as no-ops
+  in team runs, so they show as `[FAILED]` with a cause
+- [ ] Not changed: the `random` manager has no history in its prompt by design
+- Notes: the sheet's claim needs a correction. The failure branches do return `success=False` and a
+  summary, and the history stored them; what was missing was showing the flag, and the summary was
+  a long id dump cut at 120 characters.
 
 ### ML-003: COMPLETED means the call returned (High)
 

@@ -164,6 +164,47 @@ class WorkflowSerialiser:
         except Exception:
             logger.error("failed writing per-timestep workflow snapshot", exc_info=True)
 
+    def save_manager_context(
+        self,
+        timestep: int,
+        manager_agent: ManagerAgent,
+        action: Any,
+        action_result: ActionResult | None,
+    ) -> None:
+        """Write what the manager was given and what it did at one timestep.
+
+        One file per timestep. `input` holds the prompts when the manager records them
+        (the chain-of-thought manager does) and is null otherwise.
+        """
+        try:
+            path = self.output_config.get_manager_context_file_path(timestep)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            trace = getattr(manager_agent, "last_trace", None)
+            payload = {
+                "timestep": timestep,
+                "manager_id": manager_agent.agent_id,
+                "model": (trace or {}).get("model") or getattr(manager_agent, "model_name", None),
+                "input": {
+                    "system_prompt": trace.get("system_prompt"),
+                    "user_prompt": trace.get("user_prompt"),
+                }
+                if trace
+                else None,
+                "input_note": None if trace else "this manager does not record its prompts",
+                "output": action.model_dump(mode="json") if action is not None else None,
+                "result": {
+                    "success": action_result.success,
+                    "kind": action_result.kind,
+                    "summary": action_result.summary,
+                }
+                if action_result is not None
+                else None,
+            }
+            with open(path, "w") as f:
+                json.dump(payload, f, indent=2, default=str)
+        except Exception:
+            logger.error("failed writing manager context", exc_info=True)
+
     def save_workflow_summary(
         self,
         workflow: Workflow,

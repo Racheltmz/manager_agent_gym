@@ -118,9 +118,7 @@ def test_perfect_manager_scores_one_with_zero_disruption():
     assert m["baseline_score"] == 1.0
     assert m["post_change_gap"] == 0.0
     assert m["disruption_cost"] == 0.0
-    join, leave = m["events"]
-    assert join["control_assigned"] == 1 and join["control_moved"] == []  # D only (A finished)
-    assert leave["control_assigned"] == 1 and leave["control_moved"] == []
+    assert m["control_tasks"] == 2 and m["control_disrupted"] == []  # controls: A and D
     assert all(r["assigned_correctly"] for e in m["events"] for r in e["affected"])
 
 
@@ -128,28 +126,59 @@ def test_moving_an_affected_task_is_not_disruption():
     m = compute_team_change_metrics(SPEC, perfect_history(), REQS)
     join = m["events"][0]
     assert join["affected_reassigned"] == ["C"]  # handed to w3: informational only
-    assert join["disruption_cost"] == 0.0
+    assert m["disruption_cost"] == 0.0
 
 
 def test_thrashing_a_control_task_is_disruption():
     h = perfect_history()
-    for ts in (3, 4, 5, 6):  # D moved off w2, who never left, before the leave event
+    for ts in (3, 4, 5, 6):  # D moved off w2, who never left, after the first event
         h[ts]["tasks"]["D"]["assigned_agent_id"] = "w3"
     m = compute_team_change_metrics(SPEC, h, REQS)
-    join, leave = m["events"]
-    assert join["control_moved"] == ["D"] and join["disruption_cost"] == 1.0
-    assert leave["control_moved"] == [] and leave["disruption_cost"] == 0.0
-    assert m["disruption_cost"] == 0.5  # pooled: 1 move over 2 control-assigned
+    assert m["control_disrupted"] == ["D"]
+    assert m["disruption_cost"] == 0.5  # 1 disrupted of 2 control tasks (A, D)
 
 
-def test_control_move_is_charged_only_to_the_event_it_follows():
+def test_a_move_is_counted_once_when_events_share_a_timestep():
+    spec = TeamChangeSpec(
+        events=(
+            TeamChangeEvent(2, "add", "w3", ("B",)),
+            TeamChangeEvent(2, "add", "w4", ("C",)),
+            TeamChangeEvent(5, "remove", "w1", ("E",)),
+        ),
+        correct_agents=SPEC.correct_agents,
+        cases=SPEC.cases,
+    )
     h = perfect_history()
-    h[5]["tasks"]["D"]["assigned_agent_id"] = "w3"  # after the leave event starts
-    h[6]["tasks"]["D"]["assigned_agent_id"] = "w3"
+    for ts in (3, 4, 5, 6):
+        h[ts]["tasks"]["D"]["assigned_agent_id"] = "w3"
+    m = compute_team_change_metrics(spec, h, REQS)
+    assert m["control_disrupted"] == ["D"] and m["disruption_cost"] == 0.5  # not 3 events x 1 move
+
+
+def test_a_move_before_the_first_event_is_not_counted():
+    h = perfect_history()
+    for ts in range(1, 7):  # D changes workers between t0 and t1; the first event is at t2
+        h[ts]["tasks"]["D"]["assigned_agent_id"] = "w3"
     m = compute_team_change_metrics(SPEC, h, REQS)
-    join, leave = m["events"]
-    assert join["control_moved"] == []
-    assert leave["control_moved"] == ["D"]
+    assert m["control_disrupted"] == [] and m["disruption_cost"] == 0.0
+
+
+def test_reassigning_a_finished_control_task_is_not_a_move():
+    h = perfect_history()
+    for ts in (3, 4, 5, 6):  # A finished with w0 at t0; a later (recorded) reassign changes nothing
+        h[ts]["tasks"]["A"]["assigned_agent_id"] = "w3"
+    m = compute_team_change_metrics(SPEC, h, REQS)
+    assert m["control_disrupted"] == [] and m["disruption_cost"] == 0.0
+
+
+def test_first_assignment_is_not_a_move_and_composites_are_not_controls():
+    h = perfect_history()
+    for ts, snapshot in h.items():
+        snapshot["tasks"]["F"] = task("F", "w2" if ts >= 3 else None, "running" if ts >= 3 else "pending")
+        snapshot["tasks"]["P"] = {**task("P"), "subtasks": [{"name": "c1"}]}  # composite parent
+    m = compute_team_change_metrics(SPEC, h, REQS)
+    assert m["control_tasks"] == 3  # A, D, F (P is composite)
+    assert m["control_disrupted"] == [] and m["disruption_cost"] == 0.0
 
 
 def test_ignoring_the_new_worker_fails_the_gate_without_disruption():
@@ -195,12 +224,21 @@ def test_removed_affected_task_scores_zero_instead_of_crashing():
     assert row["score"] == 0.0 and row["completed"] is False
 
 
-def test_event_at_first_timestep_has_no_prior_assignments():
-    spec = TeamChangeSpec(events=(TeamChangeEvent(0, "add", "w3", ("B",)),))
-    m = compute_team_change_metrics(spec, perfect_history(), REQS)
-    assert m["events"][0]["control_assigned"] == 0
-    assert m["events"][0]["disruption_cost"] is None
-    assert m["disruption_cost"] is None
+def test_event_at_first_timestep_counts_moves_from_the_start():
+    spec = TeamChangeSpec(events=(TeamChangeEvent(0, "add", "w3", ("B", "C")),))
+    h = perfect_history()
+    for ts in range(1, 7):
+        h[ts]["tasks"]["D"]["assigned_agent_id"] = "w3"  # moved at t1, after the event at t0
+    m = compute_team_change_metrics(spec, h, REQS)
+    assert m["control_tasks"] == 3 and m["control_disrupted"] == ["D"]  # controls: A, D, E
+    assert m["disruption_cost"] == pytest.approx(1 / 3)
+
+
+def test_no_control_tasks_gives_no_disruption_cost():
+    spec = TeamChangeSpec(events=(TeamChangeEvent(2, "add", "w3", ("A", "B", "C", "D", "E")),))
+    reqs = {**REQS}
+    m = compute_team_change_metrics(spec, perfect_history(), reqs)
+    assert m["control_tasks"] == 0 and m["disruption_cost"] is None
 
 
 def test_affected_task_never_in_the_workflow_raises():

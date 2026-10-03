@@ -120,10 +120,11 @@ not enforced** (`check` cannot verify it; it depends on the manager's runtime as
   run, and move a join earlier if so.
 - **Leave timing depends on the manager.** Under ML-049 (one action per timestep) the leaver may still
   hold an unfinished task at its leave. Check the first runs.
-- **Engine support** the benchmark assumes but may not exist yet (see the planned rows in
-  `UPDATES.md`): a roster-change notice to the manager, and restarting a handed-over running task
-  (unused here, since this scenario has no running-task case).
-- Open upstream bugs that distort scores: ML-052, ML-050, ML-051, ML-049, ML-092
+- **Engine support:** the roster-change notice to the `cot` manager is built (team runs only).
+  Restart-on-reassign is also built (team runs), though unused by this scenario's cases, which have
+  no running-task case; it still closes the pre-emption gap (a task started under a non-holder
+  before its joiner arrives can now be handed over).
+- Open upstream bugs that distort scores: ML-051, ML-049, ML-092 (ML-050, ML-052 and ML-053 are fixed)
   (`docs/team_non_stationarity/known_bugs.md`).
 - Dropped workers (`privacy_counsel`, `employment_counsel`, `finance_counsel`, `acquirer_cfo`,
   `cfius_analyst`, `rwi_packager`, `target_ceo`) are not in this roster.

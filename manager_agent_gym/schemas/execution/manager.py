@@ -3,6 +3,7 @@ Manager agent observation and action data models.
 """
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -10,6 +11,26 @@ from ...schemas.core import Message
 from ...schemas.preferences.constraints import Constraint
 from ...schemas.workflow_agents.stakeholder import StakeholderPublicProfile
 from ...schemas.workflow_agents.config import AgentConfig
+
+
+class RosterChange(BaseModel):
+    """One worker joining or leaving the team, as shown to the manager (public information only)."""
+
+    timestep: int = Field(..., description="Timestep at which the change took effect")
+    action: Literal["joined", "left"]
+    agent_id: str
+    description: str = Field(default="", description="Public agent description")
+    capabilities: list[str] = Field(default_factory=list, description="Public capabilities")
+    reason: str = Field(default="", description="Scaling reason; never names a task")
+
+
+class RunningTaskInfo(BaseModel):
+    """A task currently running, as shown to the manager."""
+
+    task_id: UUID
+    name: str
+    agent_id: str | None = None
+    started_timestep: int | None = None
 
 
 class ManagerObservation(BaseModel):
@@ -76,6 +97,15 @@ class ManagerObservation(BaseModel):
     )
     agent_ids: list[str] = Field(
         default_factory=list, description="All agent IDs registered in the workflow"
+    )
+
+    running_task_info: list[RunningTaskInfo] = Field(
+        default_factory=list,
+        description="Running tasks with their worker and start timestep (empty unless team awareness is on)",
+    )
+    roster_changes: list[RosterChange] = Field(
+        default_factory=list,
+        description="Joins and leaves after timestep 0, oldest first (empty unless team awareness is on)",
     )
 
     stakeholder_profile: StakeholderPublicProfile = Field(

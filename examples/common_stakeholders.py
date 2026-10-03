@@ -6,9 +6,9 @@ from manager_agent_gym.schemas.preferences.preference import PreferenceWeights
 from manager_agent_gym.schemas.workflow_agents.stakeholder import StakeholderConfig
 from manager_agent_gym.core.workflow_agents.stakeholder_agent import StakeholderAgent
 
-# Benchmark setup: stakeholder gpt-5.4-mini at medium reasoning effort.
+# Benchmark setup: stakeholder gpt-5.4-mini. Reasoning effort is left at the provider default:
+# the installed LiteLLM rejects `reasoning_effort` for the gpt-5 family (UnsupportedParamsError).
 STAKEHOLDER_MODEL = "gpt-5.4-mini"
-STAKEHOLDER_REASONING = "medium"
 
 
 def _build_persona_config(
@@ -27,7 +27,6 @@ def _build_persona_config(
             ),
             system_prompt="Stakeholder agent (nitpicky persona)",
             model_name=STAKEHOLDER_MODEL,
-            reasoning_effort=STAKEHOLDER_REASONING,
             initial_preferences=preferences,
             response_latency_steps_min=0,
             response_latency_steps_max=1,
@@ -55,7 +54,6 @@ def _build_persona_config(
             ),
             system_prompt="Stakeholder agent (hands-off persona)",
             model_name=STAKEHOLDER_MODEL,
-            reasoning_effort=STAKEHOLDER_REASONING,
             initial_preferences=preferences,
             response_latency_steps_min=1,
             response_latency_steps_max=3,
@@ -83,7 +81,6 @@ def _build_persona_config(
         ),
         system_prompt="Stakeholder agent (balanced persona)",
         model_name=STAKEHOLDER_MODEL,
-        reasoning_effort=STAKEHOLDER_REASONING,
         initial_preferences=preferences,
         response_latency_steps_min=0,
         response_latency_steps_max=2,

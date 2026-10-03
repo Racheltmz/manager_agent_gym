@@ -15,6 +15,7 @@ from ...schemas.core.tasks import TaskStatus
 from ...core.common.logging import logger
 
 if TYPE_CHECKING:
+    from ...schemas.core.tasks import Task
     from ...schemas.core.workflow import Workflow
     from ...core.communication.service import CommunicationService
 
@@ -110,6 +111,35 @@ class BaseManagerAction(BaseModel, ABC):
         raise NotImplementedError
 
 
+def apply_assignment(workflow: "Workflow", task: "Task", agent_id: str) -> tuple[str, str]:
+    """Apply one task->agent assignment. Returns (outcome, detail).
+
+    outcome is "assigned", "restarted" (a RUNNING task handed to another agent), "unchanged" or
+    "rejected". Without `workflow.strict_assignment` this is the legacy behaviour: always "assigned".
+    """
+    if not workflow.strict_assignment:
+        task.assigned_agent_id = agent_id
+        return "assigned", ""
+    if not task.is_atomic_task():
+        return "rejected", "it is a composite task; assign its subtasks instead"
+    if task.status == TaskStatus.COMPLETED:
+        return "rejected", "it is already completed"
+    if task.status == TaskStatus.FAILED:
+        return "rejected", "it failed and cannot be restarted"
+    if task.assigned_agent_id == agent_id:
+        return "unchanged", f"it is already assigned to {agent_id}"
+    if task.status == TaskStatus.RUNNING:
+        previous = task.assigned_agent_id
+        task.assigned_agent_id = agent_id
+        task.restart_requested = True
+        return (
+            "restarted",
+            f"it was running with {previous}; that run is cancelled and it restarts from scratch with {agent_id}",
+        )
+    task.assigned_agent_id = agent_id
+    return "assigned", ""
+
+
 class AssignTaskAction(BaseManagerAction):
     """Assign a ready task to an available, appropriate agent.
 
@@ -140,7 +170,7 @@ class AssignTaskAction(BaseManagerAction):
         # Validation
         if task_uuid not in workflow.tasks:
             return ActionResult(
-                summary=f"Failed: Task {self.task_id} not found in workflow from set of all tasks: {workflow.tasks.keys()}",
+                summary=f"Failed: task {self.task_id} does not exist; use an id from the ready or pending lists",
                 kind="failed_action",
                 data={},
                 action_type=self.action_type,
@@ -148,7 +178,7 @@ class AssignTaskAction(BaseManagerAction):
             )
         if self.agent_id not in workflow.agents:
             return ActionResult(
-                summary=f"Failed: Agent {self.agent_id} not found in workflow from set of all agents: {workflow.agents.keys()}",
+                summary=f"Failed: agent {self.agent_id} is not on the roster; use an id from the available agents",
                 kind="failed_action",
                 data={},
                 action_type=self.action_type,
@@ -156,10 +186,37 @@ class AssignTaskAction(BaseManagerAction):
             )
 
         # Execute assignment
-        workflow.tasks[task_uuid].assigned_agent_id = self.agent_id
-        logger.info(f"Task {self.task_id} assigned to agent {self.agent_id}")
-        summary = f"Assigned task {self.task_id} to {self.agent_id}"
+        task = workflow.tasks[task_uuid]
+        outcome, detail = apply_assignment(workflow, task, self.agent_id)
         data = {"task_id": str(task_uuid), "agent_id": self.agent_id}
+        if outcome != "assigned":
+            data["outcome"] = outcome
+        if outcome == "rejected":
+            self.success = False
+            self.result_summary = f"Failed: task '{task.name}' not reassigned: {detail}"
+            return ActionResult(
+                summary=self.result_summary,
+                kind="failed_action",
+                data=data,
+                action_type=self.action_type,
+                success=False,
+            )
+        if outcome == "unchanged":
+            self.success = True
+            self.result_summary = f"No change: task '{task.name}': {detail}"
+            return ActionResult(
+                summary=self.result_summary,
+                kind="noop",
+                data=data,
+                action_type=self.action_type,
+                success=True,
+            )
+        logger.info(f"Task {self.task_id} assigned to agent {self.agent_id} ({outcome})")
+        summary = (
+            f"Reassigned running task '{task.name}': {detail}"
+            if outcome == "restarted"
+            else f"Assigned task {self.task_id} to {self.agent_id}"
+        )
         self.success = True
         self.result_summary = summary
         return ActionResult(
@@ -167,7 +224,7 @@ class AssignTaskAction(BaseManagerAction):
             kind="mutation",
             data=data,
             action_type=self.action_type,
-            success=self.success,
+            success=True,
         )
 
 
@@ -209,6 +266,8 @@ class AssignAllPendingTasksAction(BaseManagerAction):
                 TaskStatus.FAILED,
             ):
                 continue
+            if workflow.strict_assignment and not task.is_atomic_task():
+                continue  # composites are not assigned; their subtasks are
             task.assigned_agent_id = target_agent_id
             assigned_count += 1
 
@@ -249,30 +308,44 @@ class AssignTasksToAgentsAction(BaseManagerAction):
         workflow: "Workflow",
         communication_service: "CommunicationService | None" = None,
     ) -> ActionResult:
-        assigned = 0
+        counts = {"assigned": 0, "restarted": 0, "unchanged": 0}
         skipped: list[str] = []
+        causes: set[str] = set()
         for pair in self.assignments:
             task = workflow.tasks.get(pair.task_id)
             if task is None:
                 skipped.append(f"missing:{pair.task_id}")
+                causes.add("task does not exist")
                 continue
             if task.status in (TaskStatus.COMPLETED, TaskStatus.FAILED):
                 skipped.append(f"terminal:{pair.task_id}")
+                causes.add("task already finished or failed")
                 continue
             if pair.agent_id not in workflow.agents:
                 skipped.append(f"no_agent:{pair.agent_id}")
+                causes.add("agent is not on the roster")
                 continue
-            task.assigned_agent_id = pair.agent_id
-            assigned += 1
+            outcome, detail = apply_assignment(workflow, task, pair.agent_id)
+            if outcome == "rejected":
+                skipped.append(f"rejected:{pair.task_id}")
+                causes.add(detail)
+                continue
+            counts[outcome] += 1
 
-        summary = f"Applied {assigned} assignment(s)" + (
-            f"; skipped {len(skipped)}" if skipped else ""
-        )
+        assigned = counts["assigned"] + counts["restarted"]
+        summary = f"Applied {assigned} assignment(s)"
+        if counts["restarted"]:
+            summary += f" ({counts['restarted']} running task(s) cancelled and restarted with the new agent)"
+        if counts["unchanged"]:
+            summary += f"; {counts['unchanged']} unchanged (already assigned)"
+        if skipped:
+            summary += f"; skipped {len(skipped)} ({'; '.join(sorted(causes))})"
         data = {
             "assigned_count": assigned,
+            "restarted_count": counts["restarted"],
             "skipped": skipped,
         }
-        self.success = True
+        self.success = assigned + counts["unchanged"] > 0 or not skipped
         self.result_summary = summary
         return ActionResult(
             summary=summary,

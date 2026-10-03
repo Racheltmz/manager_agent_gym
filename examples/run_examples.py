@@ -193,6 +193,10 @@ async def run_demo(
         seed=seed,
         # Team benchmark: metrics are deterministic checklists, so no LLM-judge rubrics.
         skip_llm_judge=workflow_name.endswith(TEAM_SUFFIX),
+        # Team benchmark: the manager is told about roster changes and failed actions.
+        team_awareness=workflow_name.endswith(TEAM_SUFFIX),
+        # Team benchmark: reassigning a running task restarts it with the new agent.
+        restart_on_reassign=workflow_name.endswith(TEAM_SUFFIX),
     )
     print("   ✅ Engine configured")
 

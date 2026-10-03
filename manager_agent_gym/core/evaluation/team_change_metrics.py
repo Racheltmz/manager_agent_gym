@@ -15,10 +15,13 @@ Metrics:
   affected tasks, measured on the final state. Unfinished, never-assigned, or removed
   affected tasks score 0. Also reported per case (specialist / running_task / leave).
 - baseline_score: same scoring over every control task (checklist task no event affects).
-- disruption_cost: control tasks moved to a different worker / control tasks that already
-  had an unfinished assignment when the event hit. Control tasks are unaffected by
-  definition, so every move is unnecessary. Moving an *affected* task is not counted here;
-  it shows up in the post-change score.
+- disruption_cost: control tasks disrupted / all control tasks, computed once per task over
+  the whole run (not per event, so events that share a timestep cannot double count). A control
+  task is every unaffected leaf task in the first snapshot. It is disrupted (1, else 0) if it was
+  moved to a different worker at or after the first roster event while it was unfinished. The
+  first assignment (none to a worker) is not a move. Control tasks are unaffected by definition,
+  so every move is unnecessary. Moving an *affected* task is not counted here; it shows up in
+  the post-change score.
 """
 
 from __future__ import annotations
@@ -69,6 +72,37 @@ def _scoreable(reqs: list[TaskRequirement] | None) -> bool:
 
 def _status(task: Mapping) -> str:
     return str(task.get("status", "")).lower()
+
+
+def _control_tasks(first: Snapshot, affected: set[str]) -> list[str]:
+    """Unaffected leaf tasks of the scenario (composite parents are never assigned)."""
+    return sorted(
+        name
+        for name, t in _tasks_by_name(first).items()
+        if name not in affected and not t.get("subtasks")
+    )
+
+
+def _disrupted_controls(
+    snapshots: Mapping[int, Snapshot], timesteps: list[int], controls: list[str], start: int
+) -> list[str]:
+    """Controls moved from one worker to a different one, while unfinished, at or after `start`.
+
+    Each pair of consecutive snapshots is compared, so a move is seen at the timestep the manager
+    made it. Assigning a task for the first time is not a move.
+    """
+    disrupted: set[str] = set()
+    for prev_ts, ts in zip(timesteps, timesteps[1:]):
+        if ts < start:
+            continue
+        before, after = _tasks_by_name(snapshots[prev_ts]), _tasks_by_name(snapshots[ts])
+        for name in controls:
+            if name in disrupted or name not in before or name not in after:
+                continue
+            was, now = before[name].get("assigned_agent_id"), after[name].get("assigned_agent_id")
+            if was and now and was != now and _status(before[name]) not in _FINISHED:
+                disrupted.add(name)
+    return sorted(disrupted)
 
 
 def _score_task(
@@ -167,22 +201,16 @@ def compute_team_change_metrics(
                         moved[name] = agent
             return moved
 
-        def assigned_unfinished(only: set[str] | None, exclude: set[str]) -> dict[str, str]:
+        def assigned_unfinished(names: set[str]) -> dict[str, str]:
             return {
                 name: t["assigned_agent_id"]
                 for name, t in pre_tasks.items()
-                if t.get("assigned_agent_id")
-                and _status(t) not in _FINISHED
-                and name not in exclude
-                and (only is None or name in only)
+                if t.get("assigned_agent_id") and _status(t) not in _FINISHED and name in names
             }
 
-        # Control tasks (no event affects them) that already had an unfinished assignment.
-        controls = assigned_unfinished(None, affected_all)
-        control_moved = moved_after(controls)
         # Affected tasks that were already assigned and then moved: informational only,
         # since a correct move is rewarded by the post-change score, not penalised here.
-        affected_moved = moved_after(assigned_unfinished(set(ev.affected_tasks), set()))
+        affected_moved = moved_after(assigned_unfinished(set(ev.affected_tasks)))
 
         scored = [
             _score_task(n, final_tasks, resources, requirements_by_task[n])
@@ -205,9 +233,6 @@ def compute_team_change_metrics(
                 "affected": scored,
                 "post_change_score": mean(r["score"] for r in scored) if scored else None,
                 "affected_reassigned": sorted(affected_moved),
-                "control_assigned": len(controls),
-                "control_moved": sorted(control_moved),
-                "disruption_cost": len(control_moved) / len(controls) if controls else None,
             }
         )
 
@@ -232,8 +257,15 @@ def compute_team_change_metrics(
         for case, v in sorted(by_case.items())
     }
 
-    total_controls = sum(e["control_assigned"] for e in event_results)
-    total_moved = sum(len(e["control_moved"]) for e in event_results)
+    # Disruption is per task over the whole run, not per event (a control task belongs to every
+    # event, so per-event counting would charge one move several times).
+    controls = _control_tasks(snapshots[timesteps[0]], affected_all)
+    first_event = min((e.timestep for e in spec.events), default=None)
+    disrupted = (
+        _disrupted_controls(snapshots, timesteps, controls, first_event)
+        if first_event is not None
+        else []
+    )
 
     return {
         "events": event_results,
@@ -242,6 +274,8 @@ def compute_team_change_metrics(
         "post_change_gap": (post - baseline)
         if post is not None and baseline is not None
         else None,
-        "disruption_cost": total_moved / total_controls if total_controls else None,
+        "disruption_cost": len(disrupted) / len(controls) if controls else None,
+        "control_tasks": len(controls),
+        "control_disrupted": disrupted,
         "by_case": by_case_summary,
     }

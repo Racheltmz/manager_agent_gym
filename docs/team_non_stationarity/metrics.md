@@ -64,17 +64,29 @@ post_change_score  = mean over t in affected(event) of task_score(t)
 
 ## Metric 2: Disruption cost
 
+Computed **once per control task over the whole run**, not per event.
+
 ```
-disruption_cost = control tasks moved to a different worker
-                  / control tasks that already had an agent assigned at the event
+disrupted(t)     = 1 if control task t was moved to a different worker, else 0
+disruption_cost  = (control tasks with disrupted = 1) / (all control tasks)
 ```
 
-- **Numerator:** control tasks (not affected by the join or leave) that the manager moved to a
-  different worker. These are unnecessary by definition, since the fixed ground truth says the
-  current assignment was already best.
-- **Denominator:** all control tasks that had an agent assigned at the time of the event.
+- **Control tasks:** every unaffected **leaf** task of the scenario (read from the first snapshot).
+  Composite parents are never assigned, so they are not controls. The denominator is fixed by the
+  scenario, so managers are compared on the same base, and a manager that finishes tasks early
+  does not shrink it.
+- **Disrupted (1):** the task's assigned worker changed from one worker to a *different* one
+  while the task was unfinished, at or after the first roster event. These moves are unnecessary
+  by definition, since the fixed ground truth says the current assignment was already best. A
+  restart after a reassign counts, because it really changed workers.
+- **Not a move:** the first assignment (none to a worker), a move before the first roster event
+  (not a response to a change), and a change recorded on a finished task.
+- **One count per task:** a task is disrupted or not. Events that share a timestep (three joins at
+  t=6) cannot count the same move several times.
 - **Range:** 0 to 1. **0 means the manager left everything it should have alone.**
 - Reassigning an affected task correctly does **not** count against it.
+- **Known bias:** control tasks that finish before the first event cannot be disrupted afterwards,
+  so they count as 0. This lowers the number, identically for every manager.
 
 ## Metric 3: Cost (later)
 
@@ -98,7 +110,7 @@ LLM call. Running it only reads existing files.
 | Piece | Where | Status |
 |---|---|---|
 | Per-task checklist score (items passed / total) | [`task_requirements_evaluator.py`](../../manager_agent_gym/core/evaluation/task_requirements_evaluator.py) | Matches this doc |
-| Post-change score, baseline, disruption cost (control tasks only), per-case scores | [`team_change_metrics.py`](../../manager_agent_gym/core/evaluation/team_change_metrics.py) | Matches this doc |
+| Post-change score, baseline, disruption cost (per control task over the run), per-case scores | [`team_change_metrics.py`](../../manager_agent_gym/core/evaluation/team_change_metrics.py) | Matches this doc |
 | CLI over existing runs, writes `team_change_metrics.json` per run | [`dashboard/analysis/analyze_team_changes.py`](../../dashboard/analysis/analyze_team_changes.py) | Matches this doc |
 | Dashboard table and charts (including per case) | [`dashboard/web/src/pages/MetricsPage.tsx`](../../dashboard/web/src/pages/MetricsPage.tsx) | Matches this doc |
 | Tests | [`tests/test_team_change_metrics.py`](../../tests/test_team_change_metrics.py) | Cover the definitions above on a made-up run (join with specialist and running-task cases, then a leave) |
@@ -112,23 +124,26 @@ Run: `uv run python dashboard/analysis/analyze_team_changes.py --workflow <name>
   `correct_agents` mapping (scorer-only, diagnostics only; the authoring check requires it, the
   headline metrics ignore it), plus `cases`: the **case** of each join-affected task
   (`specialist` or `running_task`) so results can be reported per case. Affected tasks of a leave
-  are reported as `leave`. The control set is every task no event affects, so it needs no entry.
+  are reported as `leave`. The control set is every unaffected leaf task, so it needs no entry.
 - `workflow.py` with `create_workflow()`, whose affected tasks carry `requirements` where every
   item has a `pattern`.
 
 **Timing convention.** A roster change at timestep `t` is applied at the start of `t`, then the
 manager acts, then the snapshot for `t` is written. So the state *before* an event is the last
 snapshot before `t`, and the manager's response is read from snapshots from `t` up to (not
-including) the next event.
+including) the next event (used for the affected-task diagnostics). Disruption looks at every
+snapshot from the first event onward.
 
 **Definitions**
 
-- A control task counts toward the disruption denominator only if it had an assigned agent and was
-  not yet finished at the event, since a finished task can no longer be moved.
+- Disruption is per control task over the whole run (see Metric 2). A move is read by comparing
+  consecutive snapshots, so a move is seen at the timestep the manager made it.
 - Unfinished affected tasks score 0, and so does an affected task the manager removed or renamed.
   A task name that appears in no snapshot is a typo in the spec and raises an error.
-- Run-level numbers pool the events: `disruption_cost` is total moved control tasks over total
-  assigned control tasks, and `post_change_score` is the mean of the per-event scores.
+- Run-level numbers: `post_change_score` is the mean of the per-event scores. `disruption_cost`
+  is not pooled from events; it is computed once per task as above. Per event, only the
+  post-change score and `affected_reassigned` (informational) are reported.
+- The output also reports `control_tasks` (the denominator) and `control_disrupted` (the names).
 
 ## Comparison protocol
 

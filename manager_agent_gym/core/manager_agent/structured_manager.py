@@ -78,6 +78,11 @@ class ChainOfThoughtManagerAgent(ManagerAgent):
                 observation.available_agent_metadata
             )
             user_prompt = self._prepare_context(observation)
+            self.last_trace = {
+                "model": self.model_name,
+                "system_prompt": system_prompt,
+                "user_prompt": user_prompt,
+            }
 
             # Direct LLM call with structured output (validated by Pydantic)
             parsed_action = await generate_structured_response(
@@ -251,8 +256,28 @@ class ChainOfThoughtManagerAgent(ManagerAgent):
 
         # Recent manager actions (briefs)
         action_lines: list[str] = []
+        any_failed = False
         for a in self.get_action_buffer(preview_n):
             try:
+                if self.team_awareness:
+                    # Show the success flag; the cause (the result summary) only for a failure.
+                    if a.success:
+                        reason_preview = (
+                            (a.summary[:120] + "…")
+                            if a.summary and len(a.summary) > 120
+                            else (a.summary or "")
+                        )
+                        action_lines.append(
+                            f"- t={a.timestep}: {a.action_type} [SUCCESS]"
+                            f"{' — Result: ' + reason_preview if reason_preview else ''}"
+                        )
+                    else:
+                        any_failed = True
+                        cause = (a.summary or "no cause recorded")[:200]
+                        action_lines.append(
+                            f"- t={a.timestep}: {a.action_type} [FAILED] — Cause: {cause}"
+                        )
+                    continue
                 reason_preview = (
                     (a.summary[:120] + "…")
                     if a.summary and len(a.summary) > 120
@@ -266,6 +291,58 @@ class ChainOfThoughtManagerAgent(ManagerAgent):
         actions_block = (
             "\n".join(action_lines) if action_lines else "(no prior manager actions)"
         )
+        if any_failed:
+            actions_block += (
+                "\nAt least one recent action FAILED. Take its cause into account when choosing "
+                "your next action; do not repeat an action that failed for the same reason."
+            )
+
+        # Running tasks (team-membership benchmark only): name, worker, start timestep
+        running_block = ""
+        if self.team_awareness and observation.running_task_info:
+            shown = observation.running_task_info[:preview_n]
+            lines = [
+                f"- {r.name} (id {r.task_id}) | worker {r.agent_id or 'unassigned'}"
+                f" | started t={r.started_timestep if r.started_timestep is not None else '?'}"
+                for r in shown
+            ]
+            extra = len(observation.running_task_info) - len(shown)
+            if extra > 0:
+                lines.append(f"- (+{extra} more running)")
+            running_block = "\n### Running Tasks\n" + "\n".join(lines) + "\n"
+
+        # Roster changes (team-membership benchmark only): every join and leave so far
+        roster_block = ""
+        if self.team_awareness and observation.roster_changes:
+            lines: list[str] = []
+            for c in sorted(
+                observation.roster_changes, key=lambda c: c.timestep, reverse=True
+            ):
+                new = "[NEW] " if c.timestep == observation.timestep else ""
+                verb = (
+                    "JOINED"
+                    if c.action == "joined"
+                    else "LEFT (no longer assignable)"
+                )
+                caps = "; ".join(c.capabilities) or "none listed"
+                line = f"- {new}t={c.timestep} {verb} {c.agent_id} — {c.description} | capabilities: {caps}"
+                if c.reason:
+                    line += f" | reason: {c.reason}"
+                lines.append(line)
+            roster_block = (
+                "\n### Roster Changes (all joins and leaves so far, newest first)\n"
+                + "\n".join(lines)
+            )
+            if any(c.timestep == observation.timestep for c in observation.roster_changes):
+                roster_block += (
+                    "\nThe roster changed; re-evaluate unassigned and pending work against the "
+                    "current roster, and leave assignments that remain well-suited."
+                )
+            roster_block += (
+                "\nReassigning a RUNNING task to a different agent cancels its current run and restarts "
+                "it from scratch with the new agent; COMPLETED, FAILED and composite tasks cannot be reassigned."
+            )
+            roster_block += "\n"
 
         # Valid ID universes (helps the model avoid fabricating IDs)
         id_guidance_lines = [
@@ -327,7 +404,7 @@ class ChainOfThoughtManagerAgent(ManagerAgent):
 
 ### Manager Action History (recent)
 {actions_block}
-
+{running_block}{roster_block}
 ### Stakeholder Profile (public)
 {stakeholder_block}
 """

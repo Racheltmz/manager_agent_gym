@@ -1,10 +1,10 @@
 {
   "workflow": "legal_m_and_a",
-  "generated_at": "2026-10-03T13:38:47+00:00",
+  "generated_at": "2026-10-03T16:02:23+00:00",
   "inputs": {
-    "docs/team_non_stationarity/benchmark.md": "cb01a2ded7d25f11",
-    "docs/team_non_stationarity/metrics.md": "ab78b5c67736e197",
-    ".claude/skills/create-team-benchmark/SKILL.md": "0c87e23c73c8c458",
+    "docs/team_non_stationarity/benchmark.md": "5e4e943d7d0c6139",
+    "docs/team_non_stationarity/metrics.md": "5bb034a60f5dbf40",
+    ".claude/skills/create-team-benchmark/SKILL.md": "b488d1c3e74338c0",
     "examples/end_to_end_examples/legal_m_and_a": "da8943eda881a496"
   }
 }
