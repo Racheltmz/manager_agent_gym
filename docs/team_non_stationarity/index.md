@@ -11,7 +11,7 @@ This folder is split so the benchmark and the metrics can be worked on independe
 | Doc | Covers | Status |
 |---|---|---|
 | [`benchmark.md`](benchmark.md) | Scenario design: private worker content, gated tasks, change-affected cases, join/leave events, controls, replayable schedule, gate validation | Draft |
-| [`metrics.md`](metrics.md) | Post-change score, disruption cost, the hidden task→worker mapping, baselines | Draft |
+| [`metrics.md`](metrics.md) | Post-change score, disruption cost, the optional task→worker mapping (diagnostics only), baselines | Draft |
 | [`known_bugs.md`](known_bugs.md) | Upstream MA-Gym bugs that affect this work, with a progress checklist | Tracking |
 
 ## Use case
@@ -65,12 +65,14 @@ rules are deliberately *not* carried over:
 | What a leave tests | Frees a specialty that is no longer needed | Removes a capability, so unassigned gated work must go to a worker that remains |
 | What a join tests | Cold-start capability inference | Whether the manager uses the new worker where it is better, including handing over a running task |
 | Task graph | Fixed | The manager may edit it when the roster makes the plan a poor fit |
-| Ground-truth mapping | "No-label correction": no stored task→agent label | Hidden task→worker mapping, used **only for scoring**, never shown to the manager |
+| Ground-truth mapping | "No-label correction": no stored task→agent label | Optional scorer-only task→worker mapping, used for diagnostics and authoring checks, **not** for the headline metrics |
 | What differentiates workers | Trait tuple `(model, version, tier)` | Private prompt content on one shared base model |
 
-The hidden mapping is compatible with the no-label principle at runtime (the manager never sees
-it), but it does reverse the "no stored ground truth" stance for the *scorer*. Worth deciding
-explicitly whether the two benchmark families coexist or this one supersedes the other.
+Headline metrics measure outcomes (checklist score and reassignment churn), not whether the manager
+identified the correct worker, so the no-label stance holds for scoring. The stored mapping only
+feeds diagnostics, the authoring check and an optional oracle manager, and the manager never sees
+it. Worth deciding explicitly whether the two benchmark families coexist or this one supersedes the
+other.
 
 ## Benchmarked managers
 

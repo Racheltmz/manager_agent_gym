@@ -58,26 +58,33 @@ export type TeamChangeRow = {
 export type Scenario = { id: string; collection: string; name: string };
 
 export type DiffStatus = "added" | "removed" | "changed" | "unchanged";
+export type View = "workflow" | "team" | "preferences";
 
-export type DagNode = {
+export type GNode = {
   id: string;
+  label: string;
+  sublabel: string;
+  lines: { text: string; status: DiffStatus }[];
+  tags: string[];
   status: DiffStatus;
-  changed_fields: string[];
-  layer: number;
-  row: number;
-  subtask_count: number;
-  requirements_before: number | null;
-  requirements_after: number | null;
-  description_before: string | null;
-  description_after: string | null;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
 };
 
-export type DagEdge = { source: string; target: string; status: "added" | "removed" | "unchanged" };
+export type GEdge = { source: string; target: string; status: "added" | "removed" | "unchanged" };
+export type Pane = { nodes: GNode[]; edges: GEdge[] };
+export type DetailRow = { label: string; before: string | null; after: string | null; meta: boolean };
 
-export type DagDiff = {
-  nodes: DagNode[];
-  edges: DagEdge[];
+export type Compare = {
+  view: View;
+  orientation: "horizontal" | "vertical";
+  canvas: { width: number; height: number };
+  before: Pane;
+  after: Pane;
   counts: Record<DiffStatus, number>;
+  details: Record<string, { title: string; rows: DetailRow[] }>;
 };
 
 async function get<T>(path: string, params: Record<string, string | boolean> = {}): Promise<T> {
@@ -95,5 +102,5 @@ export const api = {
     get<JoinRow[]>("joins", { workflow, mid_episode_only: midEpisodeOnly, variant }),
   teamChange: () => get<TeamChangeRow[]>("team-change"),
   scenarios: () => get<Scenario[]>("scenarios"),
-  dagDiff: (before: string, after: string) => get<DagDiff>("dag/diff", { before, after }),
+  compare: (view: View, before: string, after: string) => get<Compare>("compare", { view, before, after }),
 };

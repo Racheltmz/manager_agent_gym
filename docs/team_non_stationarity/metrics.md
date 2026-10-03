@@ -5,17 +5,32 @@ Part of [`index.md`](index.md). Scenario construction is in [`benchmark.md`](ben
 **Principle:** task requirements are evaluated **deterministically at each step**, so we can
 quantify how well the manager actually performed without an LLM judge.
 
-## Hidden task-to-worker mapping
+**What is measured:** outcomes. *Fit* is how well each affected task came out given the worker it was
+assigned to (the checklist score). *Disruption* is how much reassignment churn the manager caused
+(moves of control tasks). The metrics do **not** check whether the manager "identified" the correct
+worker; that is only a diagnostic (see the mapping below).
 
-An invisible mapping from each task to the worker(s) that should be assigned to it.
+## Task-to-worker mapping (optional, diagnostics only)
 
-- Needed to tell whether the manager assigned the *right* agent, and to measure performance
-  after a change.
+`correct_agents` in the scenario's `team_change_spec.py`: for each affected task, the worker(s) that
+should hold it.
+
+- **Not used by the headline metrics.** Post-change score and disruption cost come from the
+  checklist outcome and from control-task moves alone.
+- **Used for three optional things:**
+  - the `assigned_correctly` diagnostic (did the affected task end with a listed worker?), which
+    separates "wrong worker" from "right worker, bad output";
+  - the authoring check (every affected task has an entry, and a correct worker remains after each
+    event);
+  - an **oracle manager** that reads it to give an upper bound. Not built, and it would be a
+    validity tool, never a baseline in reported results.
 - **Scorer-only.** Never exposed to the manager (it sees only task descriptions and public
   `agent_capabilities`).
-- Derived from gate validation (`task × worker → pass/fail`, see
-  [`benchmark.md`](benchmark.md#7-gate-validation-if-feasible)), so it is verified, not asserted.
-- For control tasks, the mapping is simply "whichever worker currently holds it; no change needed".
+- **Derived from gate validation** (`task × worker → pass/fail`, see
+  [`benchmark.md`](benchmark.md#7-gate-validation)), which the conversion skill runs with Claude
+  standing in for each worker. The spec must match the derived set (the authoring check enforces
+  it). It is verified on that proxy, not on the model used in manager runs.
+- Control tasks need no entry.
 
 ## Affected tasks and control tasks
 
@@ -92,8 +107,9 @@ Run: `uv run python dashboard/analysis/analyze_team_changes.py --workflow <name>
 **Scenario contract.** A scenario opts in under `examples/end_to_end_examples_team/<workflow>/`:
 
 - `team_change_spec.py` with `create_team_change_spec() -> TeamChangeSpec`: the events (timestep,
-  `add`/`remove`, agent id) with their **affected tasks fixed by name**, plus the hidden
-  `correct_agents` mapping (scorer-only), plus `cases`: the **case** of each join-affected task
+  `add`/`remove`, agent id) with their **affected tasks fixed by name**, plus the optional
+  `correct_agents` mapping (scorer-only, diagnostics only; the authoring check requires it, the
+  headline metrics ignore it), plus `cases`: the **case** of each join-affected task
   (`specialist` or `running_task`) so results can be reported per case. Affected tasks of a leave
   are reported as `leave`. The control set is every task no event affects, so it needs no entry.
 - `workflow.py` with `create_workflow()`, whose affected tasks carry `requirements` where every
@@ -128,7 +144,7 @@ including) the next event.
 - Are metrics aggregated per event or per run? (Suggest both: per-event for diagnosis, per-run
   for the headline number.)
 - Timing: should the post-change score reward speed of routing (steps between the event and the
-  affected task going to a correct worker), or only the final checklist outcome?
+  affected task going to a worker that passes its gate), or only the final checklist outcome?
 - Does the existing workflow-level scoring (quality / speed / cost) stay as a secondary report,
   or is this benchmark's score standalone?
 - Should results be broken down per case (specialist, running task), given the case rotates across

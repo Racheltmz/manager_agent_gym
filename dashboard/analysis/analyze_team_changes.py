@@ -35,6 +35,9 @@ from dashboard.analysis.analyze_runs import (  # noqa: E402
     find_run_dir,
     load_json,
 )
+from manager_agent_gym.core.evaluation.task_requirements_evaluator import (  # noqa: E402
+    requirements_by_task_name,
+)
 from manager_agent_gym.core.evaluation.team_change_metrics import (  # noqa: E402
     TeamChangeSpec,
     compute_team_change_metrics,
@@ -58,7 +61,7 @@ def load_scenario(workflow: str) -> tuple[TeamChangeSpec, dict[str, list[TaskReq
         )
     workflow_mod = importlib.import_module(f"{SCENARIO_PACKAGE}.{workflow}.workflow")
     wf = workflow_mod.create_workflow()
-    requirements = {t.name: list(t.requirements) for t in wf.tasks.values() if t.requirements}
+    requirements = requirements_by_task_name(wf.tasks.values())
     return spec_mod.create_team_change_spec(), requirements
 
 

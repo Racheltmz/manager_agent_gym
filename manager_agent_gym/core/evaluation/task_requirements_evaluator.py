@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
-from ...schemas.core.tasks import TaskRequirement
+from ...schemas.core.tasks import Task, TaskRequirement
 
 
 @dataclass(frozen=True)
@@ -23,6 +23,21 @@ class ChecklistResult:
     @property
     def score(self) -> float:
         return self.passed / self.total if self.total else 0.0
+
+
+def flatten_tasks(tasks: Iterable[Task]) -> list[Task]:
+    """Every task and, recursively, every nested subtask. A workflow's `tasks` holds only the
+    top-level tasks, but a run's snapshots list subtasks as tasks of their own."""
+    out: list[Task] = []
+    for t in tasks:
+        out.append(t)
+        out.extend(t.get_all_subtasks_flat())
+    return out
+
+
+def requirements_by_task_name(tasks: Iterable[Task]) -> dict[str, list[TaskRequirement]]:
+    """task name -> checklist, for every task (including subtasks) that has one."""
+    return {t.name: list(t.requirements) for t in flatten_tasks(tasks) if t.requirements}
 
 
 def task_output_text(

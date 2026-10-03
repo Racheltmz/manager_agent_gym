@@ -1,8 +1,8 @@
-"""Scenario task graphs and before/after diffs.
+"""Scenario discovery and task graphs.
 
 Builds each scenario's workflow exactly as authored (workflow.py only constructs pydantic
-Task objects, no LLM or network call), then lays the graph out in layers. A diff overlays two
-scenarios by task *name* so renamed tasks show as removed + added.
+Task objects, no LLM or network call) and lays graphs out in layers. The side-by-side
+comparison built on top of this lives in compare.py.
 """
 
 from __future__ import annotations
@@ -13,6 +13,8 @@ import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+
+from manager_agent_gym.core.evaluation.task_requirements_evaluator import flatten_tasks
 
 from .data import REPO_ROOT
 
@@ -83,11 +85,17 @@ def _load_workflow(scenario_id: str) -> Any:
 
 
 def _task_view(t: Any) -> dict[str, Any]:
+    """A top-level task as one graph node. Its checklist also counts its subtasks', since only
+    top-level tasks are drawn; `covers` lists every task name the node stands for."""
+    flat = flatten_tasks([t])
+    items = [{"key": r.key, "pattern": r.pattern} for x in flat for r in x.requirements]
     return {
         "name": t.name,
         "description": t.description or "",
         "subtask_count": len(getattr(t, "subtasks", None) or []),
-        "requirements": [r.key for r in (getattr(t, "requirements", None) or [])],
+        "requirements": [i["key"] for i in items],
+        "requirement_items": items,
+        "covers": [x.name for x in flat],
     }
 
 
@@ -152,57 +160,3 @@ def _layout(names: list[str], edges: list[tuple[str, str]]) -> dict[str, tuple[i
         prev = {n: float(i) for i, n in enumerate(nodes)}
     return pos
 
-
-def diff(before_id: str, after_id: str) -> dict[str, Any]:
-    """Overlay of two scenarios' graphs. Node status: added / removed / changed / unchanged."""
-    before, after = load_graph(before_id), load_graph(after_id)
-    names = sorted(set(before["tasks"]) | set(after["tasks"]))
-    be, ae = set(map(tuple, before["edges"])), set(map(tuple, after["edges"]))
-    all_edges = sorted(be | ae)
-    pos = _layout(names, all_edges)
-
-    nodes = []
-    for n in names:
-        b, a = before["tasks"].get(n), after["tasks"].get(n)
-        if b is None:
-            status, fields = "added", []
-        elif a is None:
-            status, fields = "removed", []
-        else:
-            fields = [
-                f
-                for f in ("description", "requirements", "subtask_count")
-                if b[f] != a[f]
-            ]
-            deps_b = sorted(x for x, y in be if y == n)
-            deps_a = sorted(x for x, y in ae if y == n)
-            if deps_b != deps_a:
-                fields.append("dependencies")
-            status = "changed" if fields else "unchanged"
-        view = a or b
-        nodes.append(
-            {
-                "id": n,
-                "status": status,
-                "changed_fields": fields,
-                "layer": pos[n][0],
-                "row": pos[n][1],
-                "subtask_count": view["subtask_count"],
-                "requirements_before": len(b["requirements"]) if b else None,
-                "requirements_after": len(a["requirements"]) if a else None,
-                "description_before": b["description"] if b else None,
-                "description_after": a["description"] if a else None,
-            }
-        )
-    edges = [
-        {
-            "source": s,
-            "target": t,
-            "status": "unchanged" if (s, t) in be and (s, t) in ae
-            else "removed" if (s, t) in be
-            else "added",
-        }
-        for s, t in all_edges
-    ]
-    counts = {k: sum(1 for n in nodes if n["status"] == k) for k in ("added", "removed", "changed", "unchanged")}
-    return {"nodes": nodes, "edges": edges, "counts": counts}

@@ -12,6 +12,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 
+from . import compare as compare_mod
 from . import dag, data
 
 app = FastAPI(title="MA-Gym dashboard API")
@@ -42,14 +43,14 @@ def scenarios():
     return dag.list_scenarios()
 
 
-@app.get("/api/dag/diff")
-def dag_diff(before: str, after: str):
+@app.get("/api/compare")
+def compare(view: str, before: str, after: str):
     try:
-        return dag.diff(before, after)
+        return compare_mod.compare(view, before, after)
     except KeyError as e:
         raise HTTPException(404, f"unknown scenario: {e.args[0]}")
-    except ValueError as e:
-        raise HTTPException(422, str(e))
+    except Exception as e:  # a scenario module that fails to load or build
+        raise HTTPException(422, f"{type(e).__name__}: {e}")
 
 
 # Serve the built frontend if present (npm run build in dashboard/web). Unknown paths fall

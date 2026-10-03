@@ -1,11 +1,11 @@
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import MetricsPage from "./pages/MetricsPage";
-import DagPage from "./pages/DagPage";
+import ComparePage from "./pages/ComparePage";
 
 // Add a page: create it in src/pages and add one entry here.
 const PAGES = [
   { path: "/metrics", label: "Metrics", element: <MetricsPage /> },
-  { path: "/dag", label: "DAG", element: <DagPage /> },
+  { path: "/compare", label: "Compare", element: <ComparePage /> },
 ];
 
 export default function App() {

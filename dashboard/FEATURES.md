@@ -41,4 +41,3 @@ Status: **Done** / **Planned**.
 |---|---|
 | Multi-page shell (add a page: one file in `src/pages` + one entry in `App.tsx`) | Done |
 | Light/dark theme | Done |
-| `/eval-app start` and `/eval-app stop` Claude Code command (`.claude/commands/eval-app.md`) | Done |

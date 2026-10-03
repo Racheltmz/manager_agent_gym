@@ -50,7 +50,7 @@ apply.
 | [ ] | ML-008 | Decomposition rewrites the task graph | Medium | Name-keyed affected tasks | Per sheet | Open |
 | [ ] | ML-072 | `enable_timestep_logging` defaults off | Medium | Snapshots are the metric input | Re-verify | Re-verify |
 | [ ] | ML-002 / ML-001 / ML-006 | No artifact handoff; scenarios have no resource wiring; 200-char input truncation | Medium | Scenario design | Verified | Accepted |
-| [ ] | ML-090 | Agents SDK tracing sends the API token to api.openai.com | Medium | Every run, gate validation | Verified (no disable) | Open |
+| [ ] | ML-090 | Agents SDK tracing sends the API token to api.openai.com | Medium | Every run | Verified (no disable) | Open |
 | [ ] | ML-070 / ML-073 | State restorer is lossy; only a 10-message window kept | Low | Replaying archived runs | Per sheet | Open |
 | [ ] | ML-014 | Summary counters disagree with per-task status | Low | Any report using counters | Per sheet | Open |
 | [ ] | ML-013 / ML-045 | No messages persisted; judge records leak into the action stream | Low | Communication or action-stream analysis | Per sheet | Open |
@@ -254,7 +254,7 @@ Converting `legal_m_and_a` inherits this.
 
 **Verified:** no `tracing_disabled` / `set_tracing_disabled` anywhere in the package.
 
-**How it hits us:** a security and cost-hygiene issue on every run, including gate validation.
+**How it hits us:** a security and cost-hygiene issue on every manager run. Gate validation is not affected, since it calls Claude and not the Agents SDK.
 
 - [ ] Disable Agents SDK tracing before running anything against the API
 - Notes:

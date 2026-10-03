@@ -220,3 +220,17 @@ def test_prose_only_control_checklists_are_left_out_of_the_baseline():
     assert m["baseline_score"] == 1.0  # only A is scored
     with pytest.raises(ValueError):
         compute_team_change_metrics(SPEC, perfect_history(), {**REQS, "B": [legacy]})
+
+
+def test_requirements_are_collected_from_subtasks_too():
+    from manager_agent_gym.core.evaluation.task_requirements_evaluator import (
+        flatten_tasks,
+        requirements_by_task_name,
+    )
+    from manager_agent_gym.schemas.core.tasks import Task
+
+    leaf = Task(name="leaf", description="d", requirements=reqs("L"))
+    parent = Task(name="parent", description="d", subtasks=[leaf])
+    plain = Task(name="plain", description="d")
+    assert [t.name for t in flatten_tasks([parent, plain])] == ["parent", "leaf", "plain"]
+    assert list(requirements_by_task_name([parent, plain])) == ["leaf"]

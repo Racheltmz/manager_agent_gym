@@ -26,3 +26,14 @@ Verify a row against the working tree (`git diff`, or the file itself) before wr
 existing files under `dashboard/outputs/` (override with `$MAG_OUTPUTS_DIR`) and scenario `workflow.py` files, so it is safe to run.
 Keep `dashboard/FEATURES.md` in sync the same way as `UPDATES.md`: add, change, or remove a row
 whenever a feature is added, changed, or removed.
+
+## Team benchmark skill
+
+`/create-team-benchmark <workflow>` (or `scripts/create_team_benchmark.sh`) converts a workflow into
+its team-membership variant from `docs/team_non_stationarity/benchmark.md`. It calls Claude only, never
+the OpenAI API, and it never runs `run.sh`, `run_all.sh` or `run_examples.py`. It does run gate
+validation (`scripts/team_benchmark.py gate-run`): Claude plays each worker on each affected task,
+which costs Claude usage and derives `correct_agents`. A rerun deletes `examples/end_to_end_examples_team/<workflow>/` and recreates it (a backup
+goes to the temp directory), so do not hand-edit generated scenarios: change `benchmark.md` or the
+skill and regenerate. If you edit the skill, `benchmark.md` or `metrics.md`, tell the user which
+scenarios `scripts/create_team_benchmark.sh --status` now reports as stale.

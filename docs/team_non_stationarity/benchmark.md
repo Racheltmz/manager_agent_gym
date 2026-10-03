@@ -39,7 +39,8 @@ A **gated task** has a checklist that can only be fully passed by a worker holdi
 private content (e.g. output must follow format F, which only worker W knows). The gate is a
 **deterministic format check**.
 
-Each gated task has a hidden mapping to its correct worker(s). See [`metrics.md`](metrics.md#hidden-task-to-worker-mapping).
+Each gated task records its correct worker(s) in the scenario spec. This mapping is scorer-only and
+is not used by the headline metrics; see [`metrics.md`](metrics.md#task-to-worker-mapping-optional-diagnostics-only).
 
 ## 3. Change-affected cases
 
@@ -91,6 +92,32 @@ Design note: a leave after which **no** remaining worker holds the needed conten
 impossible. That is a different scenario ("graceful degradation"); keep it as a separately labelled
 variant, not mixed in.
 
+### Event count
+
+- **Target: the source scenario's number of mid-run changes.** An event is one worker joining or
+  leaving after timestep 0 (several can share a timestep), and a worker re-added under an id already
+  on the roster is not a join. Matching the source keeps the benchmark from being weaker than the
+  original and gives the manager as much churn.
+- **Compliance beats count.** Every kept event must meet the join or leave rules above in full: a
+  gated task that depends on it, a task still gated to a remaining worker after a leave, and a leave
+  that lands only after the worker's assigned tasks are finished.
+- **Drop an event rather than force-fit it.** If a source change cannot become a compliant event
+  without bending the task graph, drop it: the worker joins at timestep 0 if still needed, or is
+  left out. Never keep a roster change that no affected task depends on; the static check rejects it.
+- **Every dropped event is listed in `CONVERSION.md`** with the reason, and the static check warns
+  when the scenario has fewer events than the source.
+
+### Rules for the rest of the scenario
+
+The rules apply to every agent and task, not only the ones an event names:
+
+- **Agents:** AI only, with an accurate declared profile and private content held by that worker
+  (section 1). No worker is pre-assigned a task.
+- **Tasks:** gated tasks follow section 2, and every task no event touches is a control task.
+  Controls with a checklist give the baseline score.
+- **Roster at the start:** everything on the initial roster follows the same agent rules.
+- The skill walks through every agent and task against these rules, not only the events.
+
 ### Control tasks
 
 Every scenario keeps **unaffected tasks** that no event touches. They check the manager does not
@@ -121,17 +148,48 @@ removes or renames an affected task must score 0 for it, not crash the metrics (
   assigned-but-unstarted task, which the engine would silently never start (see
   [`known_bugs.md`](known_bugs.md)).
 
-## 7. Gate validation (if feasible)
+## 7. Gate validation
 
-For each gated task, run the task with **every non-matching worker** and confirm it **fails** the
-checklist; run with the matching worker and confirm it **passes**.
+Confirms that each gate discriminates, and **derives the task-to-worker mapping** from the result.
+It runs as part of conversion (step *Gate validation* of the skill), with no separate ask.
 
-- Confirms the gate actually discriminates, i.e. that a generic model with the wrong private
-  prompt cannot pass by being good.
-- Costs: this runs workers (LLM calls). It must be run only on an explicit ask per `CLAUDE.md`,
-  never proactively.
-- Output: a table `task × worker → pass/fail`, stored alongside the scenario; this table also
-  *is* the source of truth for the hidden mapping.
+**How it runs** (`scripts/team_benchmark.py gate-run <workflow>`):
+
+- For every affected task and every worker that **can receive it**, Claude (Sonnet, `claude -p`
+  with no tools) plays that worker. The workers that can receive a task are everyone on the roster
+  after its event, plus anyone who joins later (the manager can assign at any time after the event),
+  plus the leaver of a leave event (the leave rule needs its result). A worker who left before the
+  event is not tested. Only the affected tasks are validated; control tasks are not gated. The system prompt is the worker's own `system_prompt`. The user
+  prompt is the real worker task template with the task's name and description and no input
+  resources, plus one line asking for the deliverable text only.
+- The reply is scored against the task's checklist patterns. A cell **passes** only if every item
+  passes, so each cell is a deterministic pass or fail. Nothing is judged by an LLM.
+- Output: a `task × worker → pass/fail` table and the saved replies, in
+  `examples/end_to_end_examples_team/<workflow>/gate_validation/`. Replies are reused until the
+  worker prompt, task or model changes.
+
+**Pass rules** (the run fails if any is broken):
+
+- **Join-affected task:** exactly the joining worker passes among the workers that can receive it. Any other worker passing means the
+  gate does not discriminate. The joining worker failing means the gate is unreachable.
+- **Leave-affected task:** the leaving worker passes, and at least one worker still on the roster
+  after the event passes, so the task stays solvable and the leave changes the correct delegation.
+- Every cell needs a reply. A failed generation is an error, never a fail.
+
+**Derived mapping.** The correct workers for a task are the workers that pass it and are on the
+roster after its event. The scenario's `correct_agents` must equal this set (the authoring check
+enforces it), so the mapping comes from the table, not from the plan.
+
+**Limits**
+
+- **Claude stands in for the worker model.** Manager runs use a different model, so this verifies
+  the gates on a proxy. A gate that a Claude worker without the private content cannot pass is
+  still not proof for every model.
+- **One reply per cell**, so the table is one sample, not a pass rate. A borderline gate can flip
+  between runs.
+- **No upstream resources.** Real workers also receive their input resources; validation does not.
+- **Cost:** one Claude call per affected task per worker that can receive it, in Claude usage and
+  never OpenAI credits. It scales with affected tasks × the roster at the time of assignment.
 
 ## 8. Scenario starting point
 
@@ -147,12 +205,47 @@ converted to AI agents). Work to do:
   unassigned task still gated to a remaining worker
 - [ ] Keep a set of untouched control tasks
 - [ ] Write the predefined timeline
-- [ ] Run gate validation (needs explicit approval to spend API budget)
+- [ ] Run gate validation (done by the skill; every gate discriminates and `correct_agents` matches the table)
+
+## 9. Generating scenarios from this doc
+
+Scenarios in `examples/end_to_end_examples_team/` are generated from this doc by the
+`create-team-benchmark` skill ([`SKILL.md`](../../.claude/skills/create-team-benchmark/SKILL.md)),
+which reads this doc fresh on every run. So the way to change what every scenario looks like is to
+edit this doc and rerun.
+
+- Convert one workflow: `scripts/create_team_benchmark.sh <workflow>` (or `/create-team-benchmark
+  <workflow>` inside Claude Code). A rerun **recreates the scenario from scratch**.
+- See what is out of date: `scripts/create_team_benchmark.sh --status`. A scenario is stale when this
+  doc, `metrics.md`, the skill, or its source workflow changed after it was generated.
+- Mechanical checks (AI-only roster, spec matches timeline, checklists have patterns, controls
+  exist, and so on): `uv run python scripts/team_benchmark.py check <workflow>`. If you add or remove
+  a case in the table above, update `KNOWN_CASES` in that script; it warns when they disagree.
+
+## 10. Validating a scenario
+
+Three layers, cheapest first. The first two test the **benchmark**. The third uses manager runs, so
+it tests whether the benchmark **discriminates between managers**.
+
+| Layer | Tests | How | Cost | Status |
+|---|---|---|---|---|
+| Static check | The scenario follows the structural rules (AI-only roster, spec matches timeline, checklists have patterns, controls exist, `correct_agents` matches the gate table) | `scripts/team_benchmark.py check <workflow>`, run by the skill | Free, no LLM | Built |
+| Gate validation | Each gate discriminates between workers, and the task-to-worker mapping is derived from the result (see *Gate validation*) | `scripts/team_benchmark.py gate-run <workflow>`, run by the skill | One Claude call per task per worker | Built |
+| Manager runs | Scores respond to delegation: `random` scores clearly below its control baseline on the affected tasks, and `cot` scores above `random` on them | Run `cot` and `random` over several seeds, read the post-change score, baseline and disruption cost from `metrics.md` | OpenAI API calls, only on an explicit ask | Not built: no pass/fail rule or dashboard indicator yet |
+
+Notes:
+
+- **`assigned_correctly` is not one of these layers.** It is a diagnostic on a manager run (did this
+  manager give the task to a derived-correct worker), so a bad manager fails it on a perfect
+  benchmark. Use it to explain a result, not to validate a scenario.
+- If the manager-run layer looks wrong, check the first two layers before suspecting the manager.
+  A red result cannot say whether the cause is a weak gate, a bad schedule, or a weak manager.
+- An **oracle manager** that assigns from the derived mapping would give an upper bound for the
+  third layer (see [`metrics.md`](metrics.md#task-to-worker-mapping-optional-diagnostics-only)). It
+  is not built.
 
 ## Open questions
 
-- How many events per scenario (one join + one leave, or several)? Starting small keeps the
-  metrics interpretable.
 - How is a running task handed over in the engine: does reassigning a RUNNING task cancel and
   restart it, or does it have to be a new action? Today it only overwrites `assigned_agent_id`.
 - Checklists use `TaskRequirement` in
