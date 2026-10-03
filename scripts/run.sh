@@ -5,7 +5,7 @@
 #   BENCHMARK=team scripts/run.sh  same, from the environment
 #
 # Team runs are labelled <workflow>_team, so they never overwrite the original runs.
-# Calls the OpenAI API (manager gpt-5, workers gpt-5-mini, stakeholder o3, judge o3).
+# Calls the OpenAI API (manager gpt-5-mini, workers gpt-5-mini, stakeholder gpt-5.4-mini; LLM-judge rubrics are skipped for team runs).
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
@@ -19,6 +19,6 @@ uv run python examples/run_examples.py \
   --benchmark $BENCHMARK \
   --workflow_name $WORKFLOWS \
   --manager-agent-mode $MODE \
-  --model-name gpt-5 \
+  --model-name gpt-5-mini \
   --output-dir dashboard/outputs/$MODE \
   --seed 42

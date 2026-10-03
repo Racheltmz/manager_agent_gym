@@ -41,7 +41,7 @@ def _normalize_mode(raw_mode: str | None) -> str:
 def _resolve_model_name(explicit_model_name: str | None) -> str:
     if explicit_model_name:
         return explicit_model_name
-    return os.environ.get("MAG_MODEL_NAME", "gpt-5")
+    return os.environ.get("MAG_MODEL_NAME", "gpt-5-mini")
 
 
 def create_manager_agent(
@@ -53,7 +53,7 @@ def create_manager_agent(
 
     Args:
         preferences: Preference weights used by the manager agent.
-        model_name: Optional model identifier (defaults from MAG_MODEL_NAME or "gpt-5").
+        model_name: Optional model identifier (defaults from MAG_MODEL_NAME or "gpt-5-mini").
         manager_mode: Optional explicit mode (defaults from MAG_MANAGER_MODE or "cot").
 
     Returns:

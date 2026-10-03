@@ -6,6 +6,10 @@ from manager_agent_gym.schemas.preferences.preference import PreferenceWeights
 from manager_agent_gym.schemas.workflow_agents.stakeholder import StakeholderConfig
 from manager_agent_gym.core.workflow_agents.stakeholder_agent import StakeholderAgent
 
+# Benchmark setup: stakeholder gpt-5.4-mini at medium reasoning effort.
+STAKEHOLDER_MODEL = "gpt-5.4-mini"
+STAKEHOLDER_REASONING = "medium"
+
 
 def _build_persona_config(
     persona: str, preferences: PreferenceWeights
@@ -22,7 +26,8 @@ def _build_persona_config(
                 "Highly involved, interrupts often, requests clarifications and pushes suggestions."
             ),
             system_prompt="Stakeholder agent (nitpicky persona)",
-            model_name="o3",
+            model_name=STAKEHOLDER_MODEL,
+            reasoning_effort=STAKEHOLDER_REASONING,
             initial_preferences=preferences,
             response_latency_steps_min=0,
             response_latency_steps_max=1,
@@ -49,7 +54,8 @@ def _build_persona_config(
                 "Very hands-off, rarely interrupts, minimal clarifications, relies on manager."
             ),
             system_prompt="Stakeholder agent (hands-off persona)",
-            model_name="o3",
+            model_name=STAKEHOLDER_MODEL,
+            reasoning_effort=STAKEHOLDER_REASONING,
             initial_preferences=preferences,
             response_latency_steps_min=1,
             response_latency_steps_max=3,
@@ -76,7 +82,8 @@ def _build_persona_config(
             "Balanced involvement: occasional clarifications and suggestions; pragmatic and time-aware."
         ),
         system_prompt="Stakeholder agent (balanced persona)",
-        model_name="o3",
+        model_name=STAKEHOLDER_MODEL,
+        reasoning_effort=STAKEHOLDER_REASONING,
         initial_preferences=preferences,
         response_latency_steps_min=0,
         response_latency_steps_max=2,

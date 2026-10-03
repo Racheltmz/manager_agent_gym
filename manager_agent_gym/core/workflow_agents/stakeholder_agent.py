@@ -17,7 +17,8 @@ import os
 import random
 import time
 
-from agents import Agent, Runner, RunResult, Tool
+from agents import Agent, ModelSettings, Runner, RunResult, Tool
+from openai.types.shared import Reasoning
 from agents.extensions.models.litellm_model import LitellmModel
 from litellm.cost_calculator import cost_per_token
 
@@ -69,6 +70,11 @@ class StakeholderAgent(StakeholderBase):
             instructions=self._build_system_prompt(),
             tools=self.tools,
             output_type=AITaskOutput,
+            model_settings=ModelSettings(
+                reasoning=Reasoning(effort=self.config.reasoning_effort)
+                if self.config.reasoning_effort
+                else None
+            ),
         )
 
         self._preference_timeline: dict[int, PreferenceWeights] = {

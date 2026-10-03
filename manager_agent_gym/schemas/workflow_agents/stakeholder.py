@@ -6,6 +6,8 @@ the simulated stakeholder. The stakeholder's dynamic preference state remains
 private to the simulator and is not exposed via these schemas.
 """
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 from .config import AgentConfig
 from ..preferences.preference import PreferenceWeights
@@ -41,6 +43,10 @@ class StakeholderConfig(AgentConfig):
     )
     model_name: str = Field(
         description="Model name to use for stakeholder agent", default="o3"
+    )
+    reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = Field(
+        default=None,
+        description="Reasoning effort for reasoning models (None: the provider default)",
     )
     initial_preferences: PreferenceWeights = Field(
         description="Initial, normalized preference weights owned by the stakeholder"

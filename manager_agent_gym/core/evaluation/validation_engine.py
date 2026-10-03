@@ -81,7 +81,11 @@ class ValidationEngine:
         selected_timesteps: list[int] | None = None,
         reward_aggregator: BaseRewardAggregator[object] | None = None,
         reward_projection: RewardProjection[object] | None = None,
+        skip_llm_judge: bool = False,
     ) -> None:
+        # When True, rubrics that need an LLM judge (llm_prompt, no evaluator_function) are not
+        # scheduled; rule-based rubrics still run. Their owners aggregate to 0.0.
+        self.skip_llm_judge: bool = bool(skip_llm_judge)
         self._rubric_semaphore: asyncio.Semaphore = asyncio.Semaphore(
             max(1, int(max_concurrent_rubrics))
         )
@@ -159,6 +163,13 @@ class ValidationEngine:
                     ):
                         scheduled.append((wf_ev.name, r))
                         owner_to_kind[wf_ev.name] = "workflow"
+
+        if self.skip_llm_judge:
+            scheduled = [
+                (o, r)
+                for o, r in scheduled
+                if r.llm_prompt is None or r.evaluator_function is not None
+            ]
 
         # 3) Run all rubrics concurrently using a single TaskGroup and tqdm
         rubric_results_by_owner: dict[str, list[RubricResult]] = {}

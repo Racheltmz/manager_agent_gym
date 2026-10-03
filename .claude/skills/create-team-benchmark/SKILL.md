@@ -74,7 +74,7 @@ Convert `examples/end_to_end_examples/<name>/` into `examples/end_to_end_example
    - `workflow.py`: the source tasks with checklists (`TaskRequirement` with a `pattern`) on the
      gated, affected and some control tasks. Keep source task names stable, because the metrics look
      tasks up by name. Do not pre-assign tasks to workers.
-   - `team.py`: AI-only worker configs (`model_name="gpt-5-mini"`, the stakeholder `o3`; see *Models* in `index.md`) with private content in `system_prompt` and accurate
+   - `team.py`: AI-only worker configs (`model_name="gpt-5-mini"`; see *Models* in `index.md`) with private content in `system_prompt` and accurate
      capabilities, and `create_team_timeline()` returning `{timestep: [(action, config, reason)]}`
      in the same shape as the source (a `remove` takes the config, as the source does).
    - `preferences.py`: adapted from the source. Drop references to agents that were removed or

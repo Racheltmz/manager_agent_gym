@@ -2,7 +2,7 @@
 # Diagnostic suite: team-based non-stationarity / open ad-hoc teamwork.
 #
 # Runs the 3 churn-heavy scenarios (legal_m_and_a, marketing_campaign, orsa) 
-# against the 3 baseline manager modes (cot, random, assign_all) using gpt-5 via 
+# against the 3 baseline manager modes (cot, random, assign_all) using gpt-5-mini via 
 # OpenAI, with a fixed seed for cross-condition comparability.
 #
 # All team timelines already exist in the scenario modules
@@ -32,7 +32,7 @@ case "$BENCHMARK" in
   team)     WORKFLOWS=(legal_m_and_a);                         MODES=(cot random);            LABEL_SUFFIX="_team" ;;
   *) echo "BENCHMARK must be 'original' or 'team', got '$BENCHMARK'" >&2; exit 1 ;;
 esac
-MODEL_NAME="gpt-5"
+MODEL_NAME="gpt-5-mini"
 SEED=42
 MAX_TIMESTEPS="${MAX_TIMESTEPS:-}"   # leave empty to use each scenario's natural length / default (50)
 OUT_ROOT="dashboard/outputs"

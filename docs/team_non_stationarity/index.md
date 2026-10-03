@@ -45,13 +45,15 @@ about each roster change and must delegate accordingly.
 
 | Role | Model | Set in |
 |---|---|---|
-| Manager | `gpt-5` | `--model-name` (default in `examples/run_examples.py`, `MAG_MODEL_NAME` fallback in the manager factory, `scripts/run.sh`, `scripts/run_all.sh`) |
+| Manager | `gpt-5-mini` | `--model-name` (default in `examples/run_examples.py`, `MAG_MODEL_NAME` fallback in the manager factory, `scripts/run.sh`, `scripts/run_all.sh`) |
 | Worker | `gpt-5-mini` | each worker's `AIAgentConfig.model_name` in the scenario's `team.py` (`WORKER_MODEL`) |
-| Stakeholder | `o3` | `examples/common_stakeholders.py` (used by the runner) and the scenario's `StakeholderConfig` |
-| LLM judge | `o3` | `WorkflowRubric.llm_model` default, `validation_rules` default |
+| Stakeholder | `gpt-5.4-mini`, medium reasoning | `examples/common_stakeholders.py` (used by the runner; `STAKEHOLDER_MODEL`, `STAKEHOLDER_REASONING`) and the scenario's `StakeholderConfig`; `StakeholderConfig.reasoning_effort` |
+| LLM judge | not run for the team benchmark (`o3` stays the default for the original one) | `skip_llm_judge` on the engine, set by `examples/run_examples.py` when the run label ends in `_team` |
 
-The team metrics do not use the LLM judge (see [`metrics.md`](metrics.md)); the engine still runs its
-rubrics each timestep unless they are removed from the run.
+The team metrics do not use the LLM judge (see [`metrics.md`](metrics.md)), so team runs do not schedule
+judge rubrics (those with an `llm_prompt` and no rule function). Rule-based rubrics still run. The
+preference and goal-achievement scores in a team run's summary are therefore partial (judge-only
+rubrics count as 0) and are not benchmark results; use the team-change metrics instead.
 
 ## Research gap
 

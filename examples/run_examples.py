@@ -191,6 +191,8 @@ async def run_demo(
         timestep_end_callbacks=default_timestep_callbacks(),
         evaluations=default_evaluators,
         seed=seed,
+        # Team benchmark: metrics are deterministic checklists, so no LLM-judge rubrics.
+        skip_llm_judge=workflow_name.endswith(TEAM_SUFFIX),
     )
     print("   ✅ Engine configured")
 
@@ -320,7 +322,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--offline-run-dir", dest="offline_run_dir", default=None)
     parser.add_argument("--max-timesteps", dest="max_timesteps", type=int, default=None)
-    parser.add_argument("--model-name", dest="model_name", default="gpt-5")
+    parser.add_argument("--model-name", dest="model_name", default="gpt-5-mini")
     parser.add_argument("--output-dir", dest="output_dir", default=None)
     parser.add_argument("--manager-agent-mode", dest="manager_agent_mode", default=None)
     parser.add_argument("--seed", dest="seed", type=int, default=42)

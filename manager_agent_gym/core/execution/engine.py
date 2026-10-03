@@ -121,6 +121,7 @@ class WorkflowExecutionEngine:
         max_concurrent_rubrics: int = 100,
         reward_aggregator: BaseRewardAggregator[object] | None = None,
         reward_projection: RewardProjection[object] | None = None,
+        skip_llm_judge: bool = False,
     ):
         self.workflow = workflow
         self.agent_registry = agent_registry
@@ -157,6 +158,7 @@ class WorkflowExecutionEngine:
             reward_aggregator=reward_aggregator,
             reward_projection=reward_projection,
             seed=self.seed,
+            skip_llm_judge=skip_llm_judge,
         )
 
         self.communication_service = (

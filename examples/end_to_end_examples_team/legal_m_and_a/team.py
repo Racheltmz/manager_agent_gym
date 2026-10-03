@@ -18,9 +18,10 @@ from manager_agent_gym.schemas.preferences.preference import (
 )
 
 
-# Benchmark model setup: manager gpt-5, workers gpt-5-mini, stakeholder o3, LLM judge o3.
+# Benchmark model setup: manager gpt-5-mini, workers gpt-5-mini, stakeholder gpt-5.4-mini (medium reasoning).
 WORKER_MODEL = "gpt-5-mini"
-STAKEHOLDER_MODEL = "o3"
+STAKEHOLDER_MODEL = "gpt-5.4-mini"
+STAKEHOLDER_REASONING = "medium"
 
 
 def _ai(agent_id: str, role: str, house: str, description: str, capabilities: list[str]) -> AIAgentConfig:
@@ -285,6 +286,7 @@ def create_legal_mna_team_configs():
             "governance, finishing with strict compliance at signing/closing. Approve key trade-offs."
         ),
         model_name=STAKEHOLDER_MODEL,
+        reasoning_effort=STAKEHOLDER_REASONING,
         name="Acquirer GC (Stakeholder)",
         role="Executive Stakeholder",
         persona_description="Pragmatic, governance-minded, risk-aware; values crisp redline logs and evidence-linked schedules.",
