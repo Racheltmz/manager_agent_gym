@@ -5,6 +5,7 @@ Provides real LLM-powered agents that can execute tasks using
 system prompts and tools via the OpenAI Agents framework.
 """
 
+import logging
 import os
 import time
 import traceback
@@ -35,6 +36,8 @@ from ...schemas.unified_results import ExecutionResult, create_task_result
 from ..workflow_agents.interface import AgentInterface
 
 from ..common.llm_interface import build_litellm_model_id
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     pass
@@ -211,31 +214,38 @@ class AIAgent(AgentInterface[AIAgentConfig]):
         return "\n".join(formatted)
 
     def _calculate_accurate_cost(self, result: RunResult) -> float:
-        """Calculate accurate cost using LiteLLM's cost_per_token function."""
-        # Extract token usage details from result
-        usage = result.context_wrapper.usage
+        """Calculate cost using LiteLLM's cost_per_token function.
 
-        # Extract cache token info if available (newer API versions)
-        cache_creation_tokens = 0
-        cached_tokens = 0
+        Cost is bookkeeping: any failure here (a model LiteLLM cannot price, missing usage
+        details) records 0.0 and must not fail a task whose work is already done.
+        """
         try:
-            if (
-                usage.input_tokens_details
-                and usage.input_tokens_details.cached_tokens is not None
-            ):
-                cached_tokens = usage.input_tokens_details.cached_tokens or 0
-                cache_creation_tokens = usage.input_tokens - cached_tokens
-        except AttributeError:
-            # Handle cases where input_tokens_details or cached_tokens don't exist
-            pass
+            usage = result.context_wrapper.usage
 
-        # Calculate cost using LiteLLM
-        prompt_cost, completion_cost = cost_per_token(
-            model=self.config.model_name,
-            prompt_tokens=usage.input_tokens,
-            completion_tokens=usage.output_tokens,
-            cache_read_input_tokens=cached_tokens,
-            cache_creation_input_tokens=cache_creation_tokens,
-        )
+            # Extract cache token info if available (newer API versions)
+            cache_creation_tokens = 0
+            cached_tokens = 0
+            try:
+                if (
+                    usage.input_tokens_details
+                    and usage.input_tokens_details.cached_tokens is not None
+                ):
+                    cached_tokens = usage.input_tokens_details.cached_tokens or 0
+                    cache_creation_tokens = usage.input_tokens - cached_tokens
+            except AttributeError:
+                # Handle cases where input_tokens_details or cached_tokens don't exist
+                pass
 
-        return prompt_cost + completion_cost
+            prompt_cost, completion_cost = cost_per_token(
+                model=self.config.model_name,
+                prompt_tokens=usage.input_tokens,
+                completion_tokens=usage.output_tokens,
+                cache_read_input_tokens=cached_tokens,
+                cache_creation_input_tokens=cache_creation_tokens,
+            )
+            return prompt_cost + completion_cost
+        except Exception:
+            logger.warning(
+                "Could not price model %s; recording cost 0.0", self.config.model_name
+            )
+            return 0.0

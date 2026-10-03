@@ -39,7 +39,7 @@ apply.
 |---|---|---|---|---|---|---|
 | [ ] | ML-052 | `AssignTaskAction` succeeds as a no-op on RUNNING / COMPLETED / unready tasks | Blocker | Disruption cost, `assigned_correctly` | Verified | Open |
 | [ ] | ML-005 | Fabricated default resource counted as success | Blocker | Checklist false passes | Verified (content unchecked) | Open |
-| [ ] | ML-050 | Cost lookup inside the success path discards completed work | Blocker | Phantom FAILED, score 0 | Verified | Open |
+| [x] | ML-050 | Cost lookup inside the success path discards completed work | Blocker | Phantom FAILED, score 0 | Verified | Fixed |
 | [ ] | ML-051 | FAILED is absorbing; no retry | High | Downstream tasks starve | Verified | Open |
 | [ ] | ML-049 | One manager action per timestep; budget runs out | High | Affected tasks unfinished, score 0 | Per sheet | Open |
 | [ ] | ML-092 | Seed never reaches the Agents SDK; runs are not reproducible | High | Multi-seed comparison | Per sheet | Open |
@@ -119,8 +119,8 @@ bug, not a result. A phantom FAILED on an affected task scores 0 and, through ML
 dependents. That looks exactly like the manager mishandling a roster change. The trigger is model
 ids LiteLLM cannot price, so it depends on which model the workers use.
 
-- [ ] Wrap the cost lookup so a pricing failure yields `cost=0.0`, not a failure
-- [ ] Confirm the model id used by the scenario workers is priceable
+- [x] Wrap the cost lookup so a pricing failure yields `cost=0.0`, not a failure (`AIAgent._calculate_accurate_cost`, test in `tests/test_ai_agent_cost.py`)
+- [x] Confirm the model id used by the scenario workers is priceable (`gpt-5-mini` and `gpt-5.4-mini` are priced by LiteLLM; checked offline)
 - Notes:
 
 ### ML-051: FAILED is absorbing (High)
