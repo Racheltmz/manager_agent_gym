@@ -12,7 +12,9 @@ with timestep >= t, up to (excluding) the next event's timestep.
 
 Metrics:
 - post_change_score: mean checklist score (items passed / total) over each event's
-  affected tasks, measured on the final state. Unfinished, never-assigned, or removed
+  affected tasks, measured on the final state. A task is scored on its own output; a task the
+  manager decomposed into subtasks is scored on the combined output of its leaf subtasks, as the
+  same checklist would have been applied had it stayed whole. Unfinished, never-assigned, or removed
   affected tasks score 0. Also reported per case (specialist / running_task / leave).
 - baseline_score: same scoring over every control task (checklist task no event affects).
 - disruption_cost: control tasks disrupted / all control tasks, computed once per task over
@@ -105,13 +107,33 @@ def _disrupted_controls(
     return sorted(disrupted)
 
 
+def _leaf_descendants(task: Mapping, by_id: Mapping[str, Mapping]) -> list[Mapping]:
+    """The leaf tasks under a decomposed task (empty if the task has no subtasks).
+
+    Each subtask is looked up in the top-level registry first (its output ids are current there),
+    falling back to the copy embedded in the parent.
+    """
+    leaves: list[Mapping] = []
+    for sub in task.get("subtasks") or []:
+        sub_id = sub.get("id") if isinstance(sub, Mapping) else sub
+        node = by_id.get(str(sub_id)) or (sub if isinstance(sub, Mapping) else None)
+        if node is None:
+            continue
+        leaves.extend(_leaf_descendants(node, by_id) or [node])
+    return leaves
+
+
 def _score_task(
     name: str,
     final_tasks: Mapping[str, Mapping],
     resources: Mapping[str, Mapping],
     requirements: list[TaskRequirement],
+    by_id: Mapping[str, Mapping] | None = None,
 ) -> dict[str, Any]:
-    """Checklist score for one task on the final state. Unfinished tasks score 0."""
+    """Checklist score for one task on the final state. Unfinished tasks score 0.
+
+    A task with subtasks is scored on its own output plus the outputs of its leaf subtasks.
+    """
     task = final_tasks.get(name)  # None if the manager removed or renamed it: scores 0
     if task is None:
         return {
@@ -122,13 +144,15 @@ def _score_task(
             "score": 0.0,
             "failed_keys": [r.key for r in requirements],
             "final_agent": None,
+            "decomposed": False,
+            "final_agents": [],
         }
     completed = _status(task) == "completed"
-    text = (
-        task_output_text(task.get("output_resource_ids") or [], resources)
-        if completed
-        else ""
-    )
+    leaves = _leaf_descendants(task, by_id or {})
+    output_ids = list(task.get("output_resource_ids") or [])
+    for leaf in leaves:
+        output_ids.extend(leaf.get("output_resource_ids") or [])
+    text = task_output_text(output_ids, resources) if completed else ""
     if completed and text:
         result = score_checklist(requirements, text)
         passed, total, failed = result.passed, result.total, list(result.failed_keys)
@@ -142,6 +166,8 @@ def _score_task(
         "score": passed / total if total else 0.0,
         "failed_keys": failed,
         "final_agent": task.get("assigned_agent_id"),
+        "decomposed": bool(leaves),
+        "final_agents": sorted({l["assigned_agent_id"] for l in leaves if l.get("assigned_agent_id")}),
     }
 
 
@@ -163,6 +189,7 @@ def compute_team_change_metrics(
     final = snapshots[timesteps[-1]]
     final_tasks = _tasks_by_name(final)
     resources = final.get("resources") or {}
+    final_by_id = {str(t["id"]): t for t in final_tasks.values() if "id" in t}
 
     affected_all = {n for e in spec.events for n in e.affected_tasks}
     # A name seen in no snapshot is a typo in the spec. A name the manager removed or renamed
@@ -213,13 +240,16 @@ def compute_team_change_metrics(
         affected_moved = moved_after(assigned_unfinished(set(ev.affected_tasks)))
 
         scored = [
-            _score_task(n, final_tasks, resources, requirements_by_task[n])
+            _score_task(n, final_tasks, resources, requirements_by_task[n], final_by_id)
             for n in ev.affected_tasks
         ]
         for row in scored:
             correct = spec.correct_agents.get(row["task"])
+            # A decomposed task has no single worker, so the diagnostic does not apply.
             row["assigned_correctly"] = (
-                None if correct is None else row["final_agent"] in correct
+                None
+                if correct is None or row["decomposed"]
+                else row["final_agent"] in correct
             )
             row["case"] = spec.cases.get(row["task"]) or (
                 "leave" if ev.action == "remove" else None
@@ -237,7 +267,7 @@ def compute_team_change_metrics(
         )
 
     baseline_rows = [
-        _score_task(n, final_tasks, resources, reqs)
+        _score_task(n, final_tasks, resources, reqs, final_by_id)
         for n, reqs in requirements_by_task.items()
         if _scoreable(reqs) and n not in affected_all and n in final_tasks
     ]

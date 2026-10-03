@@ -47,7 +47,7 @@ apply.
 | [ ] | ML-003 | COMPLETED = "call returned without raising" | High | Completion-based reporting | Verified | Accepted |
 | [ ] | ML-015 | Phantom completions, no agent / no start | Medium | Baseline and affected tasks | Per sheet | Open |
 | [ ] | ML-075 | Read-tracking never called; stakeholder reply loop | Medium | Manager wastes timesteps | Verified (no callers) | Open |
-| [ ] | ML-008 | Decomposition rewrites the task graph | Medium | Name-keyed affected tasks | Per sheet | Open |
+| [x] | ML-008 | Decomposition rewrites the task graph | Medium | Name-keyed affected tasks | Per sheet | Mitigated (scoring rolls up subtasks; renamed tasks still score 0) |
 | [ ] | ML-072 | `enable_timestep_logging` defaults off | Medium | Snapshots are the metric input | Re-verify | Re-verify |
 | [ ] | ML-002 / ML-001 / ML-006 | No artifact handoff; scenarios have no resource wiring; 200-char input truncation | Medium | Scenario design | Verified | Accepted |
 | [ ] | ML-090 | Agents SDK tracing sends the API token to api.openai.com | Medium | Every run | Verified (no disable) | Open |
@@ -239,7 +239,15 @@ decomposes or renames them, names stop matching. Keep affected tasks atomic in t
 match by a stable id.
 
 - [ ] Make affected tasks atomic, or add an id-based match
-- Notes:
+- Notes: seen in the first real run (`cot`, seed 42): the manager decomposed Negotiation & Redlines
+  (affected) and Financial Diligence – QoE & Working Capital (a control) into five subtasks each,
+  using the decompose action its default prompt recommends. Their checklists stayed on the
+  parents, which have no output of their own, so Negotiation scored 0 and the baseline was pulled
+  down. Decomposition is allowed and not forced. Fixed in the scoring: a decomposed task's checklist
+  is now run on the combined output of its leaf subtasks (`team_change_metrics.py`, tests in
+  `tests/test_team_change_metrics.py`). Rescoring the same run gave Negotiation 0.25 (it was 0,
+  the format items fail because the format holder was never assigned) and the baseline 1.0 (it was
+  0.833).
 
 ### ML-072: timestep logging default (Medium)
 

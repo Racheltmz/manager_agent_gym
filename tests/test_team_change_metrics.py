@@ -272,3 +272,70 @@ def test_requirements_are_collected_from_subtasks_too():
     plain = Task(name="plain", description="d")
     assert [t.name for t in flatten_tasks([parent, plain])] == ["parent", "leaf", "plain"]
     assert list(requirements_by_task_name([parent, plain])) == ["leaf"]
+
+
+# ---- a task the manager decomposed is scored on its subtasks' combined output ----------
+
+
+def decomposed_history(first_output="FMT-B: new-worker format", second_output="more text about the format",
+                       subtask_status="completed"):
+    """B was split by the manager into B1 and B2. The parent B has no output of its own."""
+    h = perfect_history()
+    for ts in (4, 5, 6):
+        tasks = h[ts]["tasks"]
+        tasks["B"] = {**task("B", None, "completed" if subtask_status == "completed" else "pending"),
+                      "subtasks": [{"id": "B1", "name": "B1"}, {"id": "B2", "name": "B2"}]}
+        tasks["B1"] = task("B1", "w3", subtask_status, True)
+        tasks["B2"] = task("B2", "w4", subtask_status, True)
+        h[ts]["resources"].pop("r_B", None)
+        h[ts]["resources"]["r_B1"] = {"content": first_output}
+        h[ts]["resources"]["r_B2"] = {"content": second_output}
+    return h
+
+
+def b_row(m):
+    return next(r for r in m["events"][0]["affected"] if r["task"] == "B")
+
+
+def test_decomposed_parent_is_scored_on_the_combined_output_of_its_subtasks():
+    m = compute_team_change_metrics(SPEC, decomposed_history(), REQS)
+    row = b_row(m)
+    assert row["score"] == 1.0 and row["decomposed"] is True  # the parent itself has no output
+    assert row["final_agents"] == ["w3", "w4"]
+
+
+def test_decomposed_task_scores_the_same_as_the_same_text_undecomposed():
+    whole = perfect_history()
+    whole[6]["resources"]["r_B"] = {"content": "FMT-B: new-worker format\nmore text about the format"}
+    for ts in (4, 5):
+        whole[ts]["resources"]["r_B"] = whole[6]["resources"]["r_B"]
+    split = compute_team_change_metrics(SPEC, decomposed_history(), REQS)
+    unsplit = compute_team_change_metrics(SPEC, whole, REQS)
+    assert b_row(split)["score"] == b_row(unsplit)["score"] == 1.0
+    assert b_row(unsplit)["decomposed"] is False
+
+
+def test_decomposed_task_that_misses_the_format_scores_the_items_it_misses():
+    m = compute_team_change_metrics(SPEC, decomposed_history(first_output="plain text", second_output="format only"), REQS)
+    assert b_row(m)["score"] == 0.5 and b_row(m)["failed_keys"] == ["B_fmt"]
+
+
+def test_decomposed_task_with_unfinished_subtasks_scores_zero():
+    m = compute_team_change_metrics(SPEC, decomposed_history(subtask_status="running"), REQS)
+    assert b_row(m)["score"] == 0.0 and b_row(m)["completed"] is False
+
+
+def test_assigned_correctly_does_not_apply_to_a_decomposed_task():
+    m = compute_team_change_metrics(SPEC, decomposed_history(), REQS)
+    assert b_row(m)["assigned_correctly"] is None
+
+
+def test_a_decomposed_control_task_is_rolled_up_in_the_baseline():
+    h = decomposed_history()
+    for ts in (4, 5, 6):  # D is now a decomposed control whose subtasks produce the output
+        h[ts]["tasks"]["D"] = {**task("D", None, "completed"), "subtasks": [{"id": "D1", "name": "D1"}]}
+        h[ts]["tasks"]["D1"] = task("D1", "w2", "completed", True)
+        h[ts]["resources"]["r_D1"] = {"content": "done"}
+        h[ts]["resources"].pop("r_D", None)
+    m = compute_team_change_metrics(SPEC, h, REQS)
+    assert m["baseline_score"] == 1.0

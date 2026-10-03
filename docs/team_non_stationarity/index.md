@@ -34,8 +34,8 @@ about each roster change and must delegate accordingly.
 - The team changes **only in ways the manager can respond to**. A worker is **never removed while it
   is mid-task**: a worker that has been assigned a task finishes it before leaving, so a leave never
   requires reassigning assigned work.
-- **Task decomposition:** when a change makes the existing plan a poor fit for the new roster, the
-  manager should edit the task graph if necessary.
+- **Task decomposition:** the manager may edit the task graph, including splitting a task, whenever
+  it judges that useful. The benchmark does not force it and no case depends on it.
 - **Reassignment happens only when the manager deems it necessary.**
 - **Task failures are out of scope for now.**
 - AI agents only (no `HumanAgentConfig`).
@@ -99,8 +99,6 @@ other.
 
 - Task failures.
 - Resuming a handed-over running task from partial progress (a handed-over task restarts fresh).
-- The split/merge case (a new worker suits a different task granularity), kept in view until a
-  prompt-based granularity limit is shown to be reliable.
 - Cost in time and resources (a metric to add later).
 
 ## Open questions (cross-cutting)

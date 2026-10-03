@@ -59,6 +59,11 @@ post_change_score  = mean over t in affected(event) of task_score(t)
   specifically hurt or helped.
 - Unfinished or never-assigned affected tasks score `0` (not excluded), otherwise dropping a task
   would be free.
+- **Decomposed tasks:** if the manager splits a checked task into subtasks, its checklist is run on
+  the combined output of its leaf subtasks (plus any output of its own), so the score is what the
+  same checklist would give had the task stayed whole. The task is completed only when its
+  subtasks are. `assigned_correctly` is not assessed for it (it has no single worker); its
+  subtasks' workers are listed as `final_agents`.
 - Reassigning an affected task correctly (for example moving a gated task to the specialist)
   **shows up here**, not in disruption cost.
 
@@ -138,6 +143,7 @@ snapshot from the first event onward.
 
 - Disruption is per control task over the whole run (see Metric 2). A move is read by comparing
   consecutive snapshots, so a move is seen at the timestep the manager made it.
+- A control task the manager decomposed is rolled up the same way in the baseline.
 - Unfinished affected tasks score 0, and so does an affected task the manager removed or renamed.
   A task name that appears in no snapshot is a typo in the spec and raises an error.
 - Run-level numbers: `post_change_score` is the mean of the per-event scores. `disruption_cost`

@@ -39,6 +39,14 @@ A **gated task** has a checklist that can only be fully passed by a worker holdi
 private content (e.g. output must follow format F, which only worker W knows). The gate is a
 **deterministic format check**.
 
+**What counts as a checklist.** A task's checklist is its `TaskRequirement` items. It is scored only
+if it is non-empty and **every item has a `pattern`** (a regex matched anywhere in the task's output;
+see [`metrics.md`](metrics.md)). A task with no requirements, or with an item that has no pattern,
+has no scored checklist: for an affected task that is an error, and a control task is simply left
+out of the baseline score (it still counts for disruption cost). Not every control needs a checklist:
+a container task (one that only splits into subtasks) or a setup task with no format to check can go
+without, and the checklist belongs on the subtask that produces the content.
+
 Each gated task records its correct worker(s) in the scenario spec. This mapping is scorer-only and
 is not used by the headline metrics; see [`metrics.md`](metrics.md#task-to-worker-mapping-optional-diagnostics-only).
 
@@ -61,8 +69,8 @@ Notes:
 - Both cases use the deterministic format gate from section 2.
 - Task failures are out of scope for now, so no case depends on a task failing.
 
-Not kept for now: a **split/merge** case (the new worker suits a different task granularity). It is
-set aside until a prompt-based granularity limit is shown to be reliable.
+There is no **split/merge** case (the new worker suits a different task granularity): the benchmark
+does not force a granularity change. The manager may still split tasks on its own (see section 5).
 
 ## 4. Event types
 
@@ -127,11 +135,18 @@ disruption cost in [`metrics.md`](metrics.md).
 
 ## 5. Task graph editing
 
-When a change makes the existing plan a poor fit for the new roster, the manager should edit the
-task graph if necessary. No case in section 3 currently requires this (it belongs to the deferred
-split/merge case), but the manager keeps the ability, and scoring must tolerate it: a manager that
-removes or renames an affected task must score 0 for it, not crash the metrics (see
-[`known_bugs.md`](known_bugs.md), ML-015).
+The manager may edit the task graph, including decomposing a task, whenever it judges that useful.
+No case in section 3 requires it and the benchmark does not force it, but the manager's default
+prompt encourages decomposing under uncertainty, so it will sometimes happen (in the first real run
+it split four tasks on its own). Scoring must tolerate it: a manager that removes or renames an
+affected task must score 0 for it, not crash the metrics (see [`known_bugs.md`](known_bugs.md),
+ML-015).
+
+A checklist is scored on the task's own output. If the manager decomposes a checked task, the same
+checklist is applied to the combined output of the task's leaf subtasks, exactly as it would have
+been applied had the task stayed whole (see [`metrics.md`](metrics.md) and ML-008 in
+[`known_bugs.md`](known_bugs.md)). The decomposed task has no single worker, so the
+`assigned_correctly` diagnostic does not apply to it.
 
 ## 6. Schedule
 

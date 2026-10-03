@@ -12,11 +12,13 @@ Status: **Done** / **Planned**.
 
 | Feature | Status |
 |---|---|
-| Workflow, variant, and mid-episode-joiner filters | Done |
-| Headline metrics per manager mode (5 small bar charts, mean across runs) | Done |
+| Workflow filter | Done |
+| Mid-episode-joiners-only filter (Non-stationarity and join timeline sections) | Done |
+| Metrics (mean across runs) per manager mode as big-number cards: post-change score, disruption score, baseline score, post-change leave; per-run team-change table below | Done |
+| Checklist-score DAG: per-task deterministic score at a chosen timestep (slider + run picker), node intensity = score, hover for details; a task the manager decomposed is scored on its subtasks' combined output | Done |
+| Click a checklist-DAG node for its checklist items (pattern, pass/fail) and the output text they were scored against (for a decomposed task, the subtasks' outputs are listed under the subtasks) | Done |
 | Runs table with run-health status | Done |
-| Team-change metrics: post-change vs baseline, disruption cost (control tasks moved), post-change score by case (charts + table) | Done |
-| Non-stationarity aggregate per manager mode (charts + table) | Done |
+| Non-stationarity aggregate per manager mode (3 cards: never assigned, delayed, avg assignment lag; plus table) | Done |
 | Join / first-assignment timeline table | Done |
 | Failed tasks assigned to recent joiners | Planned (was in the removed Gradio app) |
 | Single-run timeline (task status + team size over time, join/leave markers) | Planned (was in the removed Gradio app) |

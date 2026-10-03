@@ -24,18 +24,34 @@ def runs():
 
 
 @app.get("/api/joins")
-def joins(workflow: str, mid_episode_only: bool = True, variant: str = "all"):
-    return data.list_joins(workflow, mid_episode_only, variant)
+def joins(workflow: str, mid_episode_only: bool = True):
+    return data.list_joins(workflow, mid_episode_only)
 
 
 @app.get("/api/nonstationarity")
-def nonstationarity(workflow: str, mid_episode_only: bool = True, variant: str = "all"):
-    return data.nonstationarity_by_mode(workflow, mid_episode_only, variant)
+def nonstationarity(workflow: str, mid_episode_only: bool = True):
+    return data.nonstationarity_by_mode(workflow, mid_episode_only)
 
 
 @app.get("/api/team-change")
 def team_change():
     return data.list_team_change_metrics()
+
+
+@app.get("/api/checklist-dag")
+def checklist_dag(workflow_folder: str, manager_mode: str, run: str):
+    res = data.checklist_dag(workflow_folder, manager_mode, run)
+    if res is None:
+        raise HTTPException(404, "no workflow snapshots for this run")
+    return res
+
+
+@app.get("/api/checklist-task")
+def checklist_task(workflow_folder: str, manager_mode: str, run: str, task: str, timestep: int):
+    res = data.checklist_task_detail(workflow_folder, manager_mode, run, task, timestep)
+    if res is None:
+        raise HTTPException(404, "task not found in that snapshot")
+    return res
 
 
 @app.get("/api/scenarios")
