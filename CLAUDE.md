@@ -31,9 +31,13 @@ whenever a feature is added, changed, or removed.
 
 `/create-team-benchmark <workflow>` (or `scripts/create_team_benchmark.sh`) converts a workflow into
 its team-membership variant from `docs/team_non_stationarity/benchmark.md`. It calls Claude only, never
-the OpenAI API, and it never runs `run.sh`, `run_all.sh` or `run_examples.py`. It does run gate
-validation (`scripts/team_benchmark.py gate-run`): Claude plays each worker on each affected task,
-which costs Claude usage and derives `correct_agents`. A rerun deletes `examples/end_to_end_examples_team/<workflow>/` and recreates it (a backup
-goes to the temp directory), so do not hand-edit generated scenarios: change `benchmark.md` or the
-skill and regenerate. If you edit the skill, `benchmark.md` or `metrics.md`, tell the user which
-scenarios `scripts/create_team_benchmark.sh --status` now reports as stale.
+the OpenAI API, and it never runs `run.sh`, `run_all.sh` or `run_examples.py`. Gate validation
+(`scripts/team_benchmark.py gate-run`, Claude plays each worker on each affected task) is deferred
+because of its cost: the skill sets `correct_agents` by judgment, and `gate-run` refuses without
+`--enable`. On an existing scenario the skill updates in place: `scripts/team_benchmark.py diff` shows
+what changed in its inputs since it was stamped, and the skill edits only what that affects
+(`--rebuild` deletes and recreates it from scratch, with a backup in the temp directory). Prefer
+changing `benchmark.md` or the skill and running the update over hand-editing a generated scenario;
+a hand edit leaves `CONVERSION.md` and the stamp out of step unless you also update them. If you edit
+the skill, `benchmark.md` or `metrics.md`, tell the user which scenarios
+`scripts/create_team_benchmark.sh --status` now reports as stale.

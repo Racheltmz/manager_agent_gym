@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Run the create-team-benchmark skill from the terminal (headless Claude Code).
 #
-#   scripts/create_team_benchmark.sh legal_m_and_a              convert one workflow (recreates it from scratch)
+#   scripts/create_team_benchmark.sh legal_m_and_a              create it, or update an existing one in place (only what changed)
 #   scripts/create_team_benchmark.sh legal_m_and_a --plan-only  print the plan, write nothing
+#   scripts/create_team_benchmark.sh legal_m_and_a --rebuild    delete and recreate it from scratch
 #   scripts/create_team_benchmark.sh orsa icap                  several workflows, one Claude run each
 #   scripts/create_team_benchmark.sh --stale                    convert every missing or stale workflow
 #   scripts/create_team_benchmark.sh --status                   list missing / current / stale workflows
@@ -28,10 +29,12 @@ if [ "$1" = "--status" ]; then
 fi
 
 PLAN_ONLY=""
+REBUILD=""
 NAMES=()
 for arg in "$@"; do
   case "$arg" in
     --plan-only) PLAN_ONLY="--plan-only" ;;
+    --rebuild) REBUILD="--rebuild" ;;
     --stale) while read -r name state _; do
                case "$state" in missing|stale|unstamped) NAMES+=("$name") ;; esac
              done < <($TOOL status | grep -E '^[a-z_0-9]+ +(missing|current|stale|unstamped)') ;;
@@ -48,8 +51,8 @@ fi
 # Headless mode does not expand /slash commands, so ask for the skill in words.
 # Edits are auto-accepted; Bash is limited to the tool, the import check, and pytest.
 for name in "${NAMES[@]}"; do
-  echo "=== create-team-benchmark: $name ${PLAN_ONLY} ==="
-  claude -p "Use the create-team-benchmark skill with these arguments: ${name} ${PLAN_ONLY}. Follow it exactly and end with its report." \
+  echo "=== create-team-benchmark: $name ${PLAN_ONLY} ${REBUILD} ==="
+  claude -p "Use the create-team-benchmark skill with these arguments: ${name} ${PLAN_ONLY} ${REBUILD}. Follow it exactly and end with its report." \
     --permission-mode acceptEdits \
     --allowedTools "Read Write Edit Glob Grep Bash(uv run python scripts/team_benchmark.py *) Bash(uv run python -c *) Bash(uv run pytest *)" \
     ${CLAUDE_MODEL:+--model "$CLAUDE_MODEL"}

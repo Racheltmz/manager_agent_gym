@@ -142,6 +142,20 @@ def test_stamp_makes_it_current_and_each_input_change_makes_it_stale(tmp_path):
     assert any("wf1 changed" in r for r in tool.scenario_status(lay, "wf1")["reasons"])
 
 
+def test_diff_shows_only_what_changed_since_the_stamp(tmp_path, capsys):
+    lay = make_repo(tmp_path)
+    assert tool.cmd_diff(lay, "wf1") == 2  # unstamped: no snapshot
+    tool.cmd_stamp(lay, "wf1")
+    assert tool.input_diff(lay, "wf1") == {}
+    (tmp_path / "docs/team_non_stationarity/metrics.md").write_text("# Metrics\nnew rule\n")
+    (tmp_path / "src_scenarios/wf1/workflow.py").write_text("# original, edited\n")
+    d = tool.input_diff(lay, "wf1")
+    assert set(d) == {"rules/metrics.md", "source/workflow.py"} and "+new rule" in d["rules/metrics.md"]
+    assert tool.cmd_diff(lay, "wf1") == 0 and "2 changed input(s)" in capsys.readouterr().out
+    tool.cmd_stamp(lay, "wf1")  # re-stamping moves the baseline
+    assert tool.input_diff(lay, "wf1") == {}
+
+
 def test_status_of_one_scenario_does_not_depend_on_another(tmp_path):
     lay = make_repo(tmp_path)
     tool.cmd_stamp(lay, "wf1")

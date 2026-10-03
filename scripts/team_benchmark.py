@@ -5,9 +5,11 @@ The skill does the creative conversion. This tool does the parts that must be ex
 
   status [name ...]   which scenarios are missing, current, or stale (and why)
   plan <name>         rotation index and input files for one scenario
-  reset <name>        back up and delete the generated scenario, so a rerun starts from scratch
+  reset <name>        back up and delete the generated scenario (the skill's --rebuild only)
+  diff <name>         what changed in the inputs (rule docs, skill, source scenario) since the
+                      scenario was stamped, as unified diffs; the skill edits only what these affect
   check <name>        static checks of a generated scenario against the benchmark rules
-  stamp <name>        record the hashes of the inputs a scenario was generated from
+  stamp <name>        record the hashes of the inputs and save a copy of them for later diffs
   gate-run <name>     (DEFERRED, needs --enable) gate validation: Claude plays every worker on every affected task, the
                       outputs are scored against the checklist patterns, and the correct workers
                       are derived from the pass/fail table
@@ -27,6 +29,7 @@ Usage (from the repo root):
 from __future__ import annotations
 
 import argparse
+import difflib
 import hashlib
 import importlib
 import json
@@ -49,6 +52,7 @@ TEAM_DIR = "examples/end_to_end_examples_team"
 SKILL_FILE = ".claude/skills/create-team-benchmark/SKILL.md"
 RULE_DOCS = ["docs/team_non_stationarity/benchmark.md", "docs/team_non_stationarity/metrics.md"]
 STAMP_NAME = ".generated.json"
+SNAPSHOT_DIR = ".inputs"  # copy of the inputs at stamp time, inside the scenario; `diff` compares to it
 
 # Case names written into TeamChangeSpec.cases. benchmark.md lists the cases in its
 # "Change-affected cases" table; `check` warns when that table and this set disagree.
@@ -186,7 +190,62 @@ def cmd_stamp(lay: Layout, name: str) -> int:
         "inputs": input_hashes(lay, name),
     }
     (target / STAMP_NAME).write_text(json.dumps(stamp, indent=2) + "\n")
+    _save_snapshot(lay, name, target / SNAPSHOT_DIR)
     print(f"stamped {target.relative_to(lay.root) / STAMP_NAME}")
+    return 0
+
+
+def _input_files(lay: Layout, name: str) -> dict[str, Path]:
+    """Snapshot-relative path -> current file, for every input a scenario depends on."""
+    files = {f"rules/{Path(d).name}": lay.root / d for d in lay.rule_docs}
+    files["skill/SKILL.md"] = lay.root / lay.skill_file
+    for p in sorted((lay.root / lay.source_dir / name).glob("*.py")):
+        files[f"source/{p.name}"] = p
+    return {k: v for k, v in files.items() if v.exists()}
+
+
+def _save_snapshot(lay: Layout, name: str, dest: Path) -> None:
+    if dest.exists():
+        shutil.rmtree(dest)
+    for rel, src in _input_files(lay, name).items():
+        (dest / rel).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(src, dest / rel)
+
+
+def input_diff(lay: Layout, name: str) -> dict[str, str] | None:
+    """Unified diff per changed input since the stamp. None if there is no snapshot to compare to."""
+    snap = lay.root / lay.team_dir / name / SNAPSHOT_DIR
+    if not snap.is_dir():
+        return None
+    now = _input_files(lay, name)
+    before = {str(p.relative_to(snap)): p for p in snap.rglob("*") if p.is_file()}
+    out: dict[str, str] = {}
+    for rel in sorted({*before, *now}):
+        a = before[rel].read_text().splitlines(keepends=True) if rel in before else []
+        b = now[rel].read_text().splitlines(keepends=True) if rel in now else []
+        if a != b:
+            label = rel + ("" if rel in before else " (new)") + ("" if rel in now else " (removed)")
+            out[rel] = "".join(difflib.unified_diff(a, b, f"stamped/{rel}", f"current/{rel}", n=2)) or label
+    return out
+
+
+def cmd_diff(lay: Layout, name: str) -> int:
+    _require_source(lay, name)
+    status = scenario_status(lay, name)
+    if status["state"] == "missing":
+        print("no scenario yet: nothing to update; create it with the skill")
+        return 1
+    d = input_diff(lay, name)
+    if d is None:
+        print("NO SNAPSHOT: this scenario has no saved inputs to compare against. Stamp a baseline "
+              "(`stamp`) if the scenario already matches the current rules, or rebuild it.")
+        return 2
+    if not d:
+        print("NO CHANGES since the scenario was stamped")
+        return 0
+    print(f"{len(d)} changed input(s): {', '.join(d)}\n")
+    for text in d.values():
+        print(text)
     return 0
 
 
@@ -666,7 +725,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("status").add_argument("names", nargs="*")
-    for c in ("plan", "reset", "check", "stamp"):
+    for c in ("plan", "reset", "check", "stamp", "diff"):
         sub.add_parser(c).add_argument("name")
     for c in ("gate-run", "gate-score"):
         g = sub.add_parser(c)
@@ -687,7 +746,7 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_gate(lay, args.name, True, args.model, args.jobs, args.force)
     if args.cmd == "gate-score":
         return cmd_gate(lay, args.name, False, DEFAULT_GATE_MODEL, 1, False)
-    return {"plan": cmd_plan, "reset": cmd_reset, "check": cmd_check, "stamp": cmd_stamp}[args.cmd](lay, args.name)
+    return {"plan": cmd_plan, "reset": cmd_reset, "check": cmd_check, "stamp": cmd_stamp, "diff": cmd_diff}[args.cmd](lay, args.name)
 
 
 if __name__ == "__main__":
