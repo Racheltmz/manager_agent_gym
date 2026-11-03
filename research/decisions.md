@@ -1,208 +1,123 @@
-# Decisions: adaptive replanning for manager agents under unexpected external team changes
+# Decisions: empirical study of how a manager agent handles mid-workflow changes
 
-Status: the implementation described in Step 0 and the decisions below is no longer in the working tree; read them as the specification.
-Source of direction: [`Project Proposal.pdf`](Project%20Proposal.pdf) (FYP plan). Phase 1 of it: prove the problem is meaningful
-before building a manager. Branch `adaptive-replanning-specialist-loss`. Code:
-`manager_agent_gym/specialist_loss/`; scenarios:
-`examples/specialist_loss/<workflow>/`; scripts: `scripts/specialist_loss/`;
-tests: `tests/specialist_loss/`. Thresholds and the decision rule:
-[`preregistration.md`](preregistration.md). Labels: **Verified** (I read the code), **Inferred** (reasoned from it).
+Status (2026-11-03): **specification only.** Nothing for this version is built. The earlier agent-loss benchmark's package, scripts and tests are no longer in the working tree, and its inert hooks in shared code were removed on 2026-11-03.
+Source of direction: [`Project Proposal.md`](Project%20Proposal.md), the editable working copy of [`Project Proposal.pdf`](Project%20Proposal.pdf) (not final; the PDF is a snapshot of 2026-11-03, the earlier PDF is in git at c346d57). The tone of the project: an **empirical study**, run on MA-Gym's benchmarks, whose flaws are examined first and then improved by borrowing from other peer-reviewed benchmarks.
+Design, measures and open items: [`preregistration.md`](preregistration.md). Problem statement: [`problem.md`](problem.md).
+Labels: **Verified** (I read the code), **Inferred** (reasoned from it).
 
-## Alignment with the Project Proposal
+## The study in one paragraph
 
-Updated 2026-10-21 from [`Project Proposal.pdf`](Project%20Proposal.pdf). Specifications only: nothing below changes code.
+Take MA-Gym's existing benchmarks, find what is wrong with them for this purpose, and improve them by leveraging other peer-reviewed benchmarks (for example REALM-Bench). Add a layer of mid-workflow changes (environmental, preference, goal), run one frozen baseline manager (MA-Gym CoT), analyse its failures per change type, then test targeted training-free improvements one at a time. Compare against reference conditions (ignore the change, replan from scratch), not against published methods. Questions: baseline behaviour and failure modes; which design factors reduce them, for which change type; dependence on timing and on how much of the plan is affected; cost in model calls.
 
-**D15. Research question, scope, contributions.**
-- *Question*: under unexpected external team changes (an agent becomes unavailable), when do rule-based approaches suffice, and when is a manager or replanning policy needed? Either outcome is a finding.
-- *Sub-questions*: (1) does telling the manager about the change in its prompt suffice, or does an explicit continue/repair/replan **policy** improve recovery; (2) how does recovery change with the **share of affected tasks that have an equivalent remaining agent** (none to all); (3) at what cost (tokens, time, unnecessary reassignments).
-- *Contributions*: (1) a benchmark whose change processes are grounded in public incident and release records, gated tasks, recovery measured directly; (2) potentially, an explicit continue/repair/replan policy manager.
-- *Fixed*: task goals and requirements, accurately declared capabilities. *Varied*: change type and duration (outage, rate limit, permanent deprecation), substitute availability, what the manager is told, workflow size and dependency depth.
-- *Out of scope*: error recovery, task and preference drift, changing requirements, joins, deployment-performance claims. Specialised agents are an explicit assumption (realistic, but their prevalence in production is unproven), not a claim about industry practice.
-- *Hypothesis*: without an explicit policy a manager stalls on the change (under-reacts) or restarts work it did not need to (over-reacts); the right decision is structural, since what to keep, repair or redo depends on which tasks depend on the lost agent.
+## Decisions
 
-**D16. Systems under test** (target): do nothing (`ignore_change`); rule-based router with ordered fallbacks (`chain`, `routing`); MA-Gym `random`, `cot`, `assign_all`; **prompt-informed** manager (a plain LLM manager told what changed); **policy-based** manager (explicit continue/repair/replan rule over the dependency structure). Measures: post-change score on affected tasks, disruption cost, tokens and time, partial completion.
+**D21. Direction: empirical study (Problem Definition 3).** Supersedes D1 to D20 (summarised under "Earlier directions"; their text was removed, see git c346d57). Deliverable: an empirical study aligned with what a manager agent does (keep, revise or reassign work after a change), with the baseline, the per-type failure analysis and the targeted improvements. The earlier plan to build a benchmark, metrics and a manager for agent unavailability is dropped because building a grounded benchmark needs domain knowledge and data, and a genuine gap was hard to find; reusing MA-Gym's benchmarks and borrowing from peer-reviewed ones (D22) avoids the first problem.
 
-**D17. What the first Phase 1 build covered against that target.** Its code, scripts, tests and converted workflows are no longer in the working tree (2026-10-21); this table is what a rebuild must at least match, and the gaps it must close.
+**D22. Benchmark: MA-Gym's existing benchmarks, improved with elements of other peer-reviewed benchmarks, plus a change layer.** The base is MA-Gym (engine, action space, Random, CoT and Assign-All managers, and its example workflows under `examples/end_to_end_examples/`). The proposal's own table rates MA-Gym's coverage of *adaptation* as partial (preference change-points and workers joining or leaving mid-run), and its flaws are to be established (D28). What to add is to be taken from other peer-reviewed benchmarks; the proposal names REALM-Bench (planning scenarios with disruptions such as traffic, road closures and delays, and exact solvers for small instances) as a source, and its evidence list cites InterruptBench, MAST, Tack et al. and PersonaForge (peer-review status of each is not yet checked). Changes are injected at controlled points rather than by inventing workflows. Task goals are fixed except under the goal-change type. **Open:** which benchmark supplies what (scenarios, environmental disruptions, reference solvers, scoring); how borrowed elements map onto MA-Gym's `Workflow`, `Task` and worker classes.
 
-| Proposal element | Current build | Status |
+**D23. Three change types.**
+- *Environmental*: the benchmark's disruptions (traffic, road closures, delays). MA-Gym has none of its own (its adaptation coverage is preference change-points and join/leave), so these come from a borrowed benchmark or are injected.
+- *Preference*: how options are ranked changes. MA-Gym already has a preference-update mechanism (`PreferenceWeightUpdateRequest`, `create_preference_update_requests` in `examples/scenarios.py`); **Inferred** that it can seed this type, to be checked against what the borrowed scenarios need.
+- *Goal*: what counts as success changes.
+Preference and goal changes are injected at controlled points. Task and requirement drift beyond these, agent unavailability, error recovery and joins are out of scope (future work for the first).
+
+**D24. Baseline, then targeted improvements.** (1) Define and freeze one manager (model, prompt, visible state, delegation); the baseline is MA-Gym CoT. (2) Categorise failures per change type (for example ignoring the update, restarting everything, losing track of completed work, replanning the wrong part). (3) For each frequent failure add one targeted modification, test it alone, then in combination. Candidates from the proposal: an explicit continue/repair/replan decision, identifying affected tasks from dependencies, tracking the active requirements. All training-free. (4) Develop on one scenario set; report final results on a held-out set.
+
+**D25. Reference conditions, not published methods.** *Ignore the change* and *replan from scratch* bracket the manager. Where an exact solver exists for the instance, the reference answer is the re-solved remaining problem under the new objective. Cheap model tiers throughout.
+
+**D26. Variables and measures.** Variables: change type, timing (early, mid, late), share of the remaining plan affected, explicit versus implied change; one factor varied at a time from a default. Measures: outcome quality after the change against the re-solved reference; unnecessary changes to work the change does not affect (unaffected tasks as control); cost in model calls and tokens; repeated runs per condition for variability. Thresholds and the decision rule are not yet set: see the open items in `preregistration.md`.
+
+**D27. Order of work (the proposal's next steps).** (1) Understand the problems with MA-Gym's benchmarks; (2) understand what can be added from other peer-reviewed benchmarks; (3) inject no change, environment, goal and preference changes, separately; (4) run the CoT baseline; (5) understand the metrics; (6) run the improvement study. Each step is a `Planned` row in `UPDATES.md`.
+
+**D28. MA-Gym's benchmark and metrics have two core issues; establish them before anything is borrowed or built** (user decision, 2026-11-03). The study stays empirical, but the benchmark it runs on is not taken as given. Implementation bugs (handoff, judge truncation, seeding, state) are **not** core issues and are not listed as such.
+
+*Issue 1: no metric measures how well the manager handled a change.*
+- Metrics are workflow-level (preference alignment, goal achievement, constraint adherence, stakeholder management, completion time): they score the whole run, not the response to one change.
+- Most goal and preference scoring is LLM-judged against rubrics; no deterministic per-task check, so correct handling after a change cannot be verified.
+- A high score does not show the change was handled: the manager can ignore it, or keep the original workers or plan, and still score well (change handling is confounded with workflow quality).
+- Before-and-after comparison is unreliable: changes are clustered or overlapping, so there is no stable baseline and no attribution to a single change.
+- Nothing measures unnecessary disruption (changes to work the change did not affect); no control from unaffected tasks.
+- **Implication:** change-specific metrics: (a) outcome quality on the change-affected tasks after the change, deterministic where possible; (b) disruption cost on unaffected work; (c) cost in model calls and tokens. These are D26's measures; this is why they exist.
+
+*Issue 2: no justification for why and when changes are injected.*
+- Change points are fixed by design: preference change-points at about one-third and two-thirds of the action budget (paper Appendix C.6), and scripted join and leave times. No stated justification that they match real workflows. (Verified in the repo: `legal_m_and_a` hard-codes weight changes at t=35 and t=70; the paper's Appendix C.6 and the one-third/two-thirds figure are not checked here.)
+- Scenarios are synthetic, not grounded in evidence of how and when changes occur.
+- Without grounding, results cannot be shown to apply to real use; failures may reflect an arbitrary injection point.
+- **Implication:** justify injected changes from real-world evidence (the sources in `problem.md`); vary timing (early, mid, late) and share of the remaining plan affected instead of one fixed point; state the assumptions behind change types and timings.
+
+*Conflicts with other sections (flagged, nothing overwritten):*
+- The sources in `problem.md` show that changes happen and hurt agents, not *when* or how often; the proposal calls this an assumption. Issue 2 can be met by stating assumptions, unless a source on timing is found.
+- Issue 2 asks for grounding, but D21 dropped the earlier plan to build a grounded benchmark (domain knowledge and data). **Resolved 2026-11-03: justify and vary (D29).**
+- D23 proposes MA-Gym's preference mechanism to seed the preference type; its change-points are the fixed ones in Issue 2. If reused, re-time them.
+- The deterministic checklists (`TaskRequirement`) are this repo's addition, not MA-Gym's.
+
+**D29. Injected changes are justified and varied, not grounded in records** (user decision, 2026-11-03). Answers Issue 2 the cheap way.
+- Justify each change type and timing from the sources in `problem.md` and, where a borrowed benchmark states its own reasons, from those.
+- Vary timing (early, mid, late) and the share of the remaining plan affected, one factor at a time from a default (D26), instead of one fixed point.
+- Write down every assumption behind the chosen change types and timings (for example "a change can arrive at any point in the workflow") in `preregistration.md`, and carry them into the report.
+- Do not build scenarios from incident or change records (the retired v2 route).
+- **Consequence for claims:** results hold across the timings and shares tried; the study does not claim they match when changes occur in real workflows. State this in the report.
+- **Chosen 2026-11-03: state the assumption openly; no search for a timing source is planned.** The assumption is "a change can arrive at any point in the workflow, so we test early, mid and late"; no timing is claimed to be the realistic one. The cited sources show changes happen, not when, so the study does not depend on one.
+- If a source on when changes occur turns up anyway (see "What to learn from other benchmarks", question 5), it may set the default; that is optional, not a change of route.
+
+*What to learn from other benchmarks* (REALM-Bench is named in the proposal; EntCollabBench and OrchestrationBench are named by the user; **their contents have not been read, nothing is assumed about them**). For each, answer:
+1. Does it score the response to a change separately from the whole run? (Issue 1)
+2. Per-task deterministic checks, or LLM judges?
+3. Is there an unaffected-task control or a disruption measure?
+4. Is there a stable baseline per change (one change at a time, a no-change run)?
+5. How are change type and timing chosen, and what evidence is cited? (Issue 2)
+6. Is timing varied, and the share of the plan affected?
+7. Peer-review status and venue.
+8. Can its scenarios or metrics be reused on MA-Gym's `Workflow`?
+
+*Earlier-draft notes (partly overlap the issues above; the seed and ML-0xx items are implementation issues, not core, kept for reference):*
+- Adaptation is only partially covered: preference change-points and join/leave exist; environmental and goal changes do not (proposal table).
+- Scoring partly rests on LLM judges (non-deterministic and costly); the repo has `skip_llm_judge` and deterministic task checklists as a response.
+- Worker LLM calls ignore the seed (see "Seeds" below). Bugs found and fixed in the repo: ML-050, ML-052, ML-053; documentation-versus-behaviour mismatches are listed below.
+- A CoT run averaged 46.9 simulated hours because human actions block downstream tasks (proposal table); whether that is a flaw for this study is open.
+- To investigate: no exact reference solver for MA-Gym workflows; scenario size and quality.
+Output: a list of flaws with evidence, each marked fixed here, fix by borrowing (from which benchmark), or accepted as a limitation.
+
+## Earlier directions (retired; one line each)
+
+| ID | Was | Why retired |
 |---|---|---|
-| Post-change score, disruption cost, deterministic checklists, counterfactual runs (the controls) | Built (D7, D12) | Covered |
-| Do nothing, rule-based router, `cot`, `assign_all` | Was built (`ignore_change`, `chain`, `routing`, `reassign_all`, `cot`, `assign_all`) | Covered |
-| MA-Gym `random` manager | Not in the grid | Gap |
-| Prompt-informed vs policy manager | `cot` with the availability notice is the prompt-informed manager; the policy manager is the Phase 2 stub | Policy: not built |
-| Share of affected tasks with a substitute, swept from none to all | Two points only: no substitute, and one substitute that covers 3 of 4 items of both affected tasks (D4) | Gap |
-| Unannounced changes (timeouts, errors, degraded outputs), informed condition as an upper bound | Only the informed condition (D5): the manager is told | Gap |
-| Change type and duration sampled from public incident and release records | Hand-authored: outage for the rest of the run, rate limit resetting on the last step | Gap |
-| Workflow size and dependency depth as parameters | Three fixed workflows (9, 9 and 16 tasks, depth 5 to 8) | Gap |
-| Time and partial completion as measures | Per-step score exists (partial completion); wall time is not scored; tokens and cost are | Partial |
-| Structured trace of change events, decisions, affected tasks, why each task passed or failed | The run record holds actions and per-task state; no explanation per task | Partial |
-| Change-event schema (timestamp, agent, event type, duration, announced) serving public records and developer logs | `AvailabilityEvent` has agent, kind, start, duration; no `announced` field, no import path | Gap |
-| Deterministic worker mode for core tests | Built (D6) | Covered |
-| Long horizon only as a parameter | Horizon is derived from the task count (D5) | Partial |
-| Log import (replay mode) | Not planned; a later stretch | Out for now |
+| (v1) | Open ad-hoc teamwork: managers handling workers joining and leaving; join/leave benchmark and metrics | Did not fit the manager setup (uncertain capabilities and team) and MA-Gym is not built to handle change. Code and docs removed 2026-10-21 (commit c346d57). |
+| D1 to D14, D17 (v2) | Adaptive replanning under agent unavailability: scripted-worker benchmark of outages and rate limits on three converted MA-Gym workflows, 30 scenarios, scripted and rule-based baselines, an LLM diagnostic | Most outages are solved by infrastructure (deterministic routing and fallbacks), so an agentic fix was hard to justify. Package, scripts and tests are no longer in the working tree; its hooks in shared code were removed 2026-11-03. |
+| D15, D16, D18, D19, D20 (v2) | Proposal alignment for v2: substitute-share sweep, unannounced changes, grounded scenarios from public incident records, prompt versus policy manager | Superseded by D21 to D27. Agent unavailability remains future work. The "explicit continue/repair/replan policy" survives as one candidate improvement (D24). |
 
-**D18. Order of the remaining specification work** (from the proposal's Dev Work): the change-event schema first (add `announced`; one schema for public records and developer logs), then the grounded-benchmark research (SWE-bench, VitaBench, MCPEvol-Bench as models for turning real data into test cases), then the substitute-share sweep and the unannounced condition, then the policy manager. Each is a `Planned` row in `UPDATES.md`. Until they exist, the Phase 1 diagnostic, once rebuilt, answers sub-question 3 and a coarse version of sub-question 2, and **does not** answer sub-question 1 or the unannounced-change question; reports must say so.
+Two ideas carry over: the *counterfactual pair* (the same scenario run with and without the change, with unaffected tasks as controls) and *deterministic checklist scoring* (`TaskRequirement`, already in the tree). Whether either fits REALM-Bench's own scoring is open.
 
-**D19. Open concerns the proposal records** (carry into the report, do not resolve by wording): demand for manager-style solutions is unclear, and AWS guidance both lists hard-coded orchestration as a common problem and recommends deterministic capability routing and ordered fallbacks (so rules may suffice where a substitute exists); how often no fallback exists in real systems is unevidenced; the benchmark must treat changes as unannounced or a reviewer will ask how it differs from MA-Gym's scripted leaves.
-
-**D20. Benchmarks are grounded in real-world scenarios, not MA-Gym's workflows** (2026-10-21, user decision). MA-Gym stays as the engine, action space and source of the Random, CoT and
-Assign-All managers; its example workflows are no longer converted. Scenarios come from documented deployments and public incident and release records, as `preregistration.md` specifies, and
-the experiment types there (E0 to E7) replace the fixed grid. This **supersedes D3** (the three converted workflows), **D12** (the 30-scenario grid) and **D14** (conversion of MA-Gym workflows by an LLM);
-D4, D5, D7 and D8 describe the earlier prototype's mechanics and remain useful design notes (event semantics, checklist scoring, scripted managers and gates) until the grounded build restates them.
-
-## Step 0: what the existing code does
+## What the existing code does (shared MA-Gym facts that still apply)
 
 ### Fixes the study depends on
 
 | Fix | Status in the tree | Gap |
 |---|---|---|
-| ML-050: a completed task is not marked FAILED with score 0 | Present. `AIAgent._calculate_accurate_cost` ([`ai_agent.py:216`](../manager_agent_gym/core/workflow_agents/ai_agent.py)) catches any pricing failure and returns 0.0. Test: `tests/test_ai_agent_cost.py`, and `test_a_completed_task_is_not_marked_failed...` | None. Not exercised here: workers are scripted, so no LLM call prices a task. |
-| ML-052: reassignments are applied properly | Present but **opt-in**. `apply_assignment` ([`manager_actions.py:114`](../manager_agent_gym/schemas/execution/manager_actions.py)) cancels and restarts a RUNNING task and rejects COMPLETED, FAILED and composite tasks only when `Workflow.strict_assignment` is on (engine arg `restart_on_reassign`, off by default). The runner turns it on. | `AssignAllPendingTasksAction` still bypasses `apply_assignment` (it only skips composites in strict mode). With strict mode off the original benchmark keeps the legacy behaviour, as intended. |
-| ML-053: the manager is told when an action is rejected | Present but **only for `cot`, and only with `team_awareness=True`**. The engine puts the failure cause in the `ActionResult`, and `ChainOfThoughtManagerAgent._prepare_context` ([`structured_manager.py:262`](../manager_agent_gym/core/manager_agent/structured_manager.py)) renders `[FAILED] - Cause: ...`. The runner turns it on. Test: `test_cot_is_told_of_the_event_the_reset_time_and_why_its_assignment_was_rejected`. | `assign_all` never reads its action history, so it is not told. It acts once, so there is nothing to learn from. |
+| ML-050: a completed task is not marked FAILED with score 0 | Present. `AIAgent._calculate_accurate_cost` ([`ai_agent.py:216`](../manager_agent_gym/core/workflow_agents/ai_agent.py)) catches any pricing failure and returns 0.0. Test: `tests/test_ai_agent_cost.py`. | None. |
+| ML-052: reassignments are applied properly | Present but **opt-in**. `apply_assignment` ([`manager_actions.py:114`](../manager_agent_gym/schemas/execution/manager_actions.py)) cancels and restarts a RUNNING task and rejects COMPLETED, FAILED and composite tasks only when `Workflow.strict_assignment` is on (engine arg `restart_on_reassign`, off by default). | `AssignAllPendingTasksAction` still bypasses `apply_assignment`. Relevant to "reassign" decisions after a change; decide whether the study turns it on. |
+| ML-053: the manager is told when an action is rejected | Present but **only for `cot`, and only with `team_awareness=True`** (the flag name is a leftover of the join/leave work; it now only controls the failure-cause and running-task blocks). `ChainOfThoughtManagerAgent._prepare_context` ([`structured_manager.py:262`](../manager_agent_gym/core/manager_agent/structured_manager.py)). | `assign_all` never reads its action history. |
 
-I fixed nothing in Step 0: all three exist. I did not widen them to the original benchmark, because the brief says not to alter existing managers.
+### Seeds
 
-### Worker join and leave events
+Verified, by call site. `cot` and `assign_all` send `seed` to the OpenAI call (best effort; `temperature` defaults to 1, so runs still vary). Worker LLM calls (`AIAgent.execute_task`) **do not** use the seed (ML-092). The stakeholder's `random.Random` is seeded, but its one LLM call is unseeded. `decompose_task` passes `workflow.seed`, which nothing sets (always 42). Judge and rubrics use `ValidationEngine(seed=...)`. Consequence: expect run-to-run variance from workers as well as the manager unless workers are made deterministic; the proposal asks for repeated runs per condition, so budget for it.
 
-Verified. `AgentRegistry.schedule_agent_add/remove(timestep, ...)` ([`registry.py:192`](../manager_agent_gym/core/workflow_agents/registry.py))
-store changes by timestep. `WorkflowExecutionEngine._check_and_apply_agent_changes`
-([`engine.py:1085`](../manager_agent_gym/core/execution/engine.py)) runs at the start of `execute_timestep`, before the manager acts, calls
-`apply_scheduled_changes_for_timestep` once per timestep, mirrors the registry into `workflow.agents`, and prunes mirrored agents that left.
-A join creates a new `AIAgent` (an LLM agent). A leave deletes the agent from the registry and the workflow; its running task is not
-cancelled, and a task still assigned to it never starts (the engine looks the agent up and skips the task when it is gone). Every change is
-appended to `registry.change_log`, which the manager sees only with `team_awareness=True`.
-**Neither is an outage or a rate limit**: a leaver is gone for good and nothing returns. The study therefore adds its own availability events
-(D5) and keeps the worker on the roster, flagged unavailable. Joins and leaves are out of scope.
+### Scoring in MA-Gym
 
-### Is `_seed` used?
-
-Verified, by call site:
-
-| Component | Uses the seed? |
-|---|---|
-| `cot` manager | Yes. `generate_structured_response(seed=self._seed)` sends it as the OpenAI `seed`, which is best-effort. `temperature` is the function default **1**, so runs still vary. |
-| `assign_all` manager | Same call, same seed. |
-| Worker LLM calls (`AIAgent.execute_task`) | **No.** `_seed` is stored by `configure_seed` and never passed to `Runner.run` (ML-092 confirmed). |
-| Stakeholder | Its `random.Random` is seeded and drives reply latency and pushes. Its one LLM call (`execute_task`) is unseeded. `policy_step` makes no LLM call. |
-| Judge / rubrics | Yes, `ValidationEngine(seed=...)` passes it. |
-| Decomposition | **Mismatch.** `decompose_task` passes `workflow.seed` ([`manager_actions.py:1050`](../manager_agent_gym/schemas/execution/manager_actions.py)). The field's comment says the engine sets it, but nothing does, so it is always 42 and ignores the run seed. |
-
-Consequence: the only run-to-run variance in this study is the manager's, as the brief wants, because workers are scripted (D6) and the
-stakeholder is static. Seeds affect only the LLM managers, and only weakly. Scripted and rule-based runs are deterministic, so they run once.
-
-### How scoring is done in MA-Gym
-
-Verified. The original benchmark scores a run with `ValidationEngine.evaluate_timestep`
-([`validation_engine.py`](../manager_agent_gym/core/evaluation/validation_engine.py)): preference rubrics and workflow evaluators, some
-LLM-judged and some code, aggregated per timestep into a reward vector by a `BaseRewardAggregator`. `skip_llm_judge` drops the LLM-judged
-rubrics. This study needs none of it. Its metrics are deterministic checklists computed post hoc from the run record
-(`specialist_loss/scoring.py`), as the existing team-membership metrics are (`team_change_metrics.py`, which I reuse the idea of, not the code).
+`ValidationEngine.evaluate_timestep` ([`validation_engine.py`](../manager_agent_gym/core/evaluation/validation_engine.py)) scores preference rubrics and workflow evaluators (some LLM-judged, some code) into a per-timestep reward vector. `skip_llm_judge` drops the LLM-judged rubrics. The study's outcome measure is instead task-specific (quality versus the re-solved reference), so MA-Gym's scoring is likely only a source of per-step snapshots. **Inferred; confirm when the scorer is designed.**
 
 ### Documentation versus behaviour
 
-1. `Workflow.seed`: documented as set by the engine; it is never set (above).
-2. `create_manager_agent(..., manager_mode="assign_all")` ignores `model_name`; `OneShotDelegateManagerAgent` always uses its default, `o3`.
-   The study's cost estimate prices `assign_all` at o3 accordingly.
-3. `AIAgent`'s "seed" plumbing (`configure_seed`) reads as if it makes workers deterministic. It does not.
-4. `CreateTaskAction` and `RemoveTaskAction` mutate `workflow.tasks` without fixing dependants: removing a task leaves its dependants waiting
-   forever. The engine here prunes such dependencies (D5); the standard engine does not.
-
-## Decisions
-
-**D1. Scope.** Phase 1 only. No manager is built, no LLM diagnostic is run. Existing managers, the original benchmark and the team-membership
-benchmark are unchanged; every engine hook I added is inert unless a specialist-loss scenario turns it on (tests:
-`test_new_hooks_are_inert_by_default`, `test_other_managers_get_no_availability_notices`, and the full existing suite, 172 tests, still passes).
-
-**D2. Where things live.** Each workflow is a scenario package in the original layout, `examples/specialist_loss/<workflow>/` (`workflow.py`,
-`team.py`, `team_change_spec.py`, `preferences.py`, `__init__.py`, `CONVERSION.md`, as the original MA-Gym scenarios have), loaded by `get_scenario("<workflow>_team")`.
-Variants are factory arguments: `create_team_change_spec(roster, event_type, timing)` returns the scenario (events, affected tasks, hidden labels and chains,
-oracle actions); no event type is the control. The packages are generated from the conversion output by `scripts/specialist_loss/generate_packages.py` and
-are what runs read (`Family.load`); `examples/specialist_loss/<workflow>/.conversion/` (`family.json`, `llm_cache/`, `log.json`) is only the conversion cache. Under `run_examples.py` a package loads as a
-static LLM roster with no events; events and scripted workers run only through `scripts/specialist_loss/run_grid.py`. The library is a new package,
-`manager_agent_gym/specialist_loss/`, not edits to the team benchmark. Additive edits to shared code, each defaulting to off:
-`Workflow.unavailable_agents` (empty), a rejection branch in `apply_assignment` and `AssignAllPendingTasksAction`, a `_can_start` hook in the engine
-(always True), `AvailabilityNotice` and `ManagerObservation.availability_notices` (empty), a notice block in the `cot` prompt (renders only when
-non-empty), and an optional `UsageTracker` around `generate_structured_response`.
-
-**D3. Workflows.** *Superseded by D20.* `airline_launch_program` (9 tasks, depth 5, 13 dependencies: dense convergence), `ipo_readiness_program` (9 tasks, depth 6: two
-branches joining at the end) and `supply_chain_planning` (16 tasks, depth 8: a wide fan-out then a chain). Chosen for different graph shapes and
-modest size, since an LLM manager gets one action per step (ML-049) and cost scales with steps. I **flatten** each to its top-level tasks (each
-becomes one atomic task, dependencies kept): the sources nest several subtasks per task, which would triple the steps and make assignment, not
-replanning, the bottleneck. The target pair must be a task at depth 3 or more and a later task that depends on it, with something downstream.
-
-**D4. No exact equivalent; partial substitution.** Every task has exactly one worker that can produce all of its four checklist items (tests:
-`test_no_agent_has_an_equivalent`). In the *partial* roster one adjacent worker (chosen by the LLM as nearest in expertise) can produce the first
-three, the basic ones, of each target task. In the *none* roster it can produce none. "Splitting" a task is not credited as more than the
-substitute can do: a scripted worker can only deliver items its labels cover, so splitting between workers yields their union, which is still
-three items. LLM managers that `decompose_task` are scored by rolling up their leaf subtasks. Consequence for the verdict: even a perfect repair
-scores (3 + 2) / 6 = 0.83 on a target task, an unavoidable drop of 0.17. The preregistered drop is the brief's; I also report the oracle's.
-
-**D5. Events.** Applied at the start of timestep `start`, before the manager acts.
-- *Outage*: unavailable from `start` for the rest of the run. Running tasks are lost: they return to READY (`restart_count` + 1) and start fresh if run again.
-- *Rate limit*: no new work until it resets at `start + duration`. In-flight tasks complete. **My reading**: "accepts no new assignments" also holds
-  tasks that are assigned but not started, otherwise an upfront-assigning manager is never affected and the event does nothing.
-- The manager is told by an `AvailabilityNotice` in its observation (the `cot` prompt renders it), by the worker leaving the available-agents list,
-  and by a rejection that names the cause. A rate limit notice states the reset step. Notices name the worker and the effect, never a task or a substitute.
-- *Timing*: early = step 1, before the target's first task starts. Mid = the step that task is in flight (its depth, 3 or more). These are set from the
-  nominal schedule (assign everything at t=0, one step per dependency level), so for slower LLM managers "mid" may arrive before the task has started.
-- *Reset step*: the **last** step of the horizon. With any earlier reset, doing nothing passes (test `test_a_rate_limit_that_resets_in_time_is_cleared_by_waiting`),
-  which fails the gating requirement. So in this grid a rate limit is, for pending tasks, indistinguishable from an outage except that it is announced with a reset
-  time and spares in-flight work. Waiting is the correct action only for the in-flight task of a mid rate limit. A regime where a short rate limit should
-  simply be waited out is **not covered**; it is the natural extension.
-- Removing a task detaches its dependants (the engine prunes dependencies on missing tasks), see Step 0 mismatch 4.
-- Horizon = tasks + critical-path depth + 6 (20, 21 and 30 steps).
-
-**D6. Deterministic workers, static stakeholder, no judge.** `ScriptedWorker` writes a templated deliverable: a `PRODUCED_BY` line and one plain sentence per
-checklist item its hidden labels cover. No LLM, no randomness. Deliverables use plain sentences, not tags, because the `cot` prompt shows completed
-deliverables and a tag would leak the hidden label names (found by a test, fixed). The stakeholder never speaks and its preferences never change; it is
-unassignable. No LLM judge runs. The study's worker (GPT-4.1), stakeholder (o3) and judge (o3) models are therefore unused by design (`config.py`).
-
-**D7. Metrics.** Per task, `ITEMS_PER_TASK + 2` = 6 binary checks on the state at a timestep: each of 4 content items present; the producer is on the task's
-hidden eligibility chain; every dependency finished before the task did. Score = passed / total; an uncompleted task scores 0. An infeasible task (no worker can
-do any of it) that the manager removed scores `DROP_CREDIT`.
-- *Post-change score*: mean over the two affected tasks at the end of the run. *Per-step score*: mean over all tasks, and over the affected tasks, at every step.
-- *Disruption cost*: of the unaffected tasks unfinished at the event, the share that were moved to another worker, restarted, or removed afterwards. A first
-  assignment, or a move before the event, is not disruption.
-- *Failure taxonomy*, per run: `assigned_to_unavailable` (a rejected assignment), `stalled` (an affected task left unfinished), `needless_restart` (an unaffected task
-  restarted), `over_replanning` (an unaffected task moved or removed, or a repairable affected task removed), `under_repair` (an affected task finished below the
-  best achievable score), `dependency_violation` (a task finished before a dependency still in the plan), `premature_termination` (the manager ended the run with work left).
-- **`DROP_CREDIT = 1.0` is a judgement, not a measurement.** It says removing work nobody can do, and carrying on, is fully correct. It decides every *none*
-  scenario, so the analysis reports the verdict again with `DROP_CREDIT = 0`. Change it in `thresholds.py`.
-- Tokens and cost per run come from `UsageTracker` and are stored in each record.
-
-**D8. Scripted managers and gates.** `ignore_change` (assign every task to its nominal worker at t=0, then noop), `oracle` (that, then the documented action per
-affected task, one per step), `null` (noop only). Validation (`tests/specialist_loss/test_validation.py`) asserts, for all 30 scenarios: ignore-change <= 0.55 on affected tasks in
-every change scenario and >= 0.95 on controls; the starting roster's best cover of an affected task is below full; the oracle reaches >= 95% of the achievable maximum with zero
-disruption; the null manager scores <= 0.02 everywhere, controls included. The *mid rate-limit* scenarios sit at 0.50 for ignore-change (the in-flight task completes), under the 0.55
-limit; that margin is thin by construction.
-
-**D9. No LLM spend without an explicit flag.** `runner.build_manager` raises `PermissionError` for `cot` and `assign_all` unless `allow_llm=True`; `run_grid.py` needs
-`--enable-llm`. No test runs an LLM manager. The conversion script (D14) made 16 cheap calls, as Step 1 asked. `estimate_cost.py` builds the real prompts without calling a model.
-
-**D10. Models.** `config.py`: development default `gpt-5-mini`, preregistered manager `gpt-5`, overridable with `MAG_MODEL_NAME` or `--model`. Conversion model `gpt-4o-mini`
-(the account has no `gpt-4.1-mini`, checked with a free model listing); `gpt-5-mini` for the two calls `gpt-4o-mini` failed three times on the 16-task workflow.
-
-**D11. Rule-based baselines** read the hidden labels and chains. `routing`: each unfinished task to the available worker with the best label match, re-checked every step,
-running tasks included (so it restarts an in-flight task on a rate limit). `chain`: the first available worker on the task's predefined chain, re-checked every step, but running tasks are left alone.
-`reassign_all`: when who is available changes, one bulk assignment of every unfinished task over the remaining roster. None has a "drop" action, so none recovers a *none* scenario.
-In this synthetic world the three largely coincide; the differences are running-task handling and latency. Say so if they are reported as three independent baselines.
-
-**D12. Grid.** *Superseded by D20.* Controls are per roster, because the roster differs between partial and none (the substitute's description and labels): 3 workflows x (2 controls + 2 rosters x 2 event types x
-2 timings) = 30 scenarios. A control is scored on the same affected pair as the change scenarios of its roster.
-
-**D13. Phase 2** is a stub only (`phase2_stub.py`): an interface and the planned behaviour.
-
-**D14. Conversion.** *Superseded by D20.* `scripts/specialist_loss/convert_workflows.py`: three cached calls per workflow (roster and target/substitute choice, 4-item checklists, can/cannot descriptions), each validated and
-retried with the rejection reasons. Event configs, labels, chains, affected tasks and oracle actions are code, not LLM output. The substitute's description in each roster is composed by code from the checklist,
-so it says exactly what it can and cannot do of the target's work. After the conversion, `generate_packages.py` (no LLM) writes the packages. Result: **16 LLM calls, 18,372 prompt and 13,531 completion tokens, about $0.02** (each package's `.conversion/log.json`),
-including 7 rejected attempts. Every response is cached in `examples/specialist_loss/<workflow>/.conversion/llm_cache/`.
+1. `Workflow.seed`: documented as set by the engine; never set.
+2. `create_manager_agent(..., manager_mode="assign_all")` ignores `model_name`; `OneShotDelegateManagerAgent` always uses `o3`.
+3. `AIAgent`'s `configure_seed` reads as if it makes workers deterministic; it does not.
+4. `CreateTaskAction` and `RemoveTaskAction` mutate `workflow.tasks` without fixing dependants: removing a task leaves its dependants waiting forever. Matters for a "replan" action that removes tasks.
 
 ## Limitations to carry into the report
 
-- The build is the informed, hand-authored, two-point-substitute slice of the proposal; see D17 for the gaps.
-
-- A task is one step long, and a manager gets one action per step (ML-049); the horizon is sized for that, and "mid" timing is defined on the scripted schedule.
-- The partial-roster drop floor (0.17) and the none-roster `DROP_CREDIT` both come from my design.
-- The rate-limit grid is the late-reset regime only (D5).
-- Descriptions and checklists are LLM-written by a small model; a manager might not read "can also produce a basic version" as I intend. The family files should be skimmed before the diagnostic.
-- `assign_all` runs on o3 whatever the manager model setting.
+- One benchmark base (MA-Gym, improved) and cheap model tiers; findings may not transfer to other workflows.
+- MA-Gym was published at DAI 2025 (International Conference on Distributed Artificial Intelligence, London; arXiv version Oct 2025). Its metrics were not designed to measure change handling (D28, Issue 1), so their validity for this study is argued directly.
+- MA-Gym's flaws (D28) that are accepted rather than fixed are limitations of the study; borrowed elements may not fit MA-Gym's model of workers exactly.
+- Where no exact solver exists, the reference for outcome quality is weaker; say which scenarios have one.
+- Preference and goal changes are injected by the study, not taken from the benchmark. How often users change their minds in multi-agent workflows is unmeasured (assumption).
+- Agent unavailability and task changes are out of scope.

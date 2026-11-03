@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { api, type Run, type TeamChangeRow } from "../api";
+import { api, type Run } from "../api";
 import { useAsync } from "../useAsync";
 import DataTable from "../components/DataTable";
 import ChecklistDag from "../components/ChecklistDag";
@@ -7,20 +7,6 @@ import ChecklistDag from "../components/ChecklistDag";
 const MODE_ORDER = ["random", "cot", "assign_all"];
 const byMode = (a: { manager_mode: string }, b: { manager_mode: string }) =>
   (MODE_ORDER.indexOf(a.manager_mode) + 1 || 99) - (MODE_ORDER.indexOf(b.manager_mode) + 1 || 99);
-
-/** Mean of `key` per manager mode, skipping nulls. */
-function meanByMode<T extends { manager_mode: string }>(rows: T[], keys: string[]) {
-  const modes = [...new Set(rows.map((r) => r.manager_mode))].map((manager_mode) => ({ manager_mode })).sort(byMode);
-  return modes.map(({ manager_mode }) => {
-    const mine = rows.filter((r) => r.manager_mode === manager_mode) as Record<string, unknown>[];
-    const out: Record<string, string | number | null> = { manager_mode };
-    for (const k of keys) {
-      const vals = mine.map((r) => r[k]).filter((v): v is number => typeof v === "number");
-      out[k] = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
-    }
-    return out;
-  });
-}
 
 type Stat = { key: string; label: string; digits?: number };
 
@@ -49,7 +35,6 @@ function StatCards({ data, stats }: { data: Record<string, string | number | nul
 
 export default function MetricsPage() {
   const runs = useAsync(() => api.runs(), []);
-  const teamChange = useAsync(() => api.teamChange(), []);
   const [workflow, setWorkflow] = useState<string>("");
   const [midOnly, setMidOnly] = useState(true);
 
@@ -64,11 +49,6 @@ export default function MetricsPage() {
   const ns = useAsync(() => (wf ? api.nonstationarity(wf, midOnly) : Promise.resolve([])), [wf, midOnly]);
   const joins = useAsync(() => (wf ? api.joins(wf, midOnly) : Promise.resolve([])), [wf, midOnly]);
 
-  const tc: TeamChangeRow[] = (teamChange.data ?? []).filter((r) => r.workflow === wf);
-  const tcByMode = useMemo(
-    () => meanByMode(tc, ["post_change_score", "baseline_score", "disruption_cost", "specialist", "running_task", "leave"]),
-    [tc],
-  );
 
   if (runs.error) return <div className="error">{runs.error}</div>;
 
@@ -84,33 +64,6 @@ export default function MetricsPage() {
           </select>
         </label>
       </div>
-
-      <h2>Metrics (mean across runs)</h2>
-      <StatCards
-        data={tcByMode}
-        stats={[
-          { key: "post_change_score", label: "Post-change score" },
-          { key: "disruption_cost", label: "Disruption score" },
-          { key: "baseline_score", label: "Baseline score" },
-          { key: "leave", label: "Post-change: leave" },
-        ]}
-      />
-      {tc.length === 0 ? (
-        <div className="muted">None for this workflow. Run dashboard/analysis/analyze_team_changes.py.</div>
-      ) : (
-        <DataTable
-          rows={[...tc].sort(byMode)}
-          columns={[
-            { key: "manager_mode", label: "mode" },
-            { key: "run" },
-            { key: "post_change_score", label: "post-change", digits: 3 },
-            { key: "baseline_score", label: "baseline", digits: 3 },
-            { key: "post_change_gap", label: "gap", digits: 3 },
-            { key: "disruption_cost", label: "disruption", digits: 3 },
-            { key: "leave", digits: 3 },
-          ]}
-        />
-      )}
 
       <h2>Checklist score by task over time</h2>
       <ChecklistDag runs={[...wfRuns].sort(byMode)} />

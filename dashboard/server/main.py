@@ -33,11 +33,6 @@ def nonstationarity(workflow: str, mid_episode_only: bool = True):
     return data.nonstationarity_by_mode(workflow, mid_episode_only)
 
 
-@app.get("/api/team-change")
-def team_change():
-    return data.list_team_change_metrics()
-
-
 @app.get("/api/checklist-dag")
 def checklist_dag(workflow_folder: str, manager_mode: str, run: str):
     res = data.checklist_dag(workflow_folder, manager_mode, run)

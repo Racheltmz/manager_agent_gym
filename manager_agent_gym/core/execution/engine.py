@@ -761,7 +761,7 @@ class WorkflowExecutionEngine:
                 if task.assigned_agent_id:
                     agent = self.workflow.agents.get(task.assigned_agent_id)
 
-                if agent and self._can_start(task, agent):
+                if agent:
                     # Get task resources
                     resources = self._get_task_resources(task)
 
@@ -780,11 +780,6 @@ class WorkflowExecutionEngine:
                     tasks_started.append(task.id)
 
         return tasks_started, tasks_completed, tasks_failed
-
-    def _can_start(self, task: Task, agent: AgentInterface) -> bool:
-        """Hook: whether a ready, assigned task may start now. Always True here; the
-        specialist-loss engine holds tasks whose agent is in an outage or rate limit."""
-        return True
 
     async def _restart_reassigned_tasks(self) -> None:
         """Cancel the run of every RUNNING task the manager reassigned and return it to READY.

@@ -1,139 +1,103 @@
-# Preregistration: when do rules suffice, and when is a manager or replanning policy needed?
+# Preregistration: how a manager agent handles mid-workflow changes (empirical study)
 
-Written **before any run**. Specification only: no code, scenario or result exists yet. Companion to [`decisions.md`](decisions.md) (design decisions) and
-[`Project Proposal.pdf`](Project%20Proposal.pdf) (direction). Frozen when the user gives the "go"; after that, changes are dated amendments at the bottom.
-Values marked **(proposed)** are my defaults for you to confirm before the freeze.
+Written **before any run**. Specification only: no code, scenario or result exists for this version. Companion to [`decisions.md`](decisions.md) (design decisions) and
+[`Project Proposal.md`](Project%20Proposal.md) (direction; editable working copy of the PDF, not final). Frozen when the user gives the "go"; after that, changes are dated amendments at the bottom.
+The earlier version of this file (agent-loss thresholds, 30-scenario grid, experiments E0 to E7) was never frozen and is retired; it is in git at c346d57.
 
-## Question
+## Questions
 
-Under unexpected external team changes (an agent becomes unavailable), when do rule-based approaches suffice, and when is a manager or replanning policy
-needed? Either outcome is a finding: if rules suffice, builders can avoid the cost of a manager; if a manager wins, the benchmark locates where.
-
-| ID | Sub-question (from the proposal) |
+| ID | Question (from the proposal) |
 |---|---|
-| Q1 | Does telling the manager about the change in its prompt suffice, or does an explicit continue/repair/replan policy improve recovery? |
-| Q2 | How does recovery change with the share of affected tasks that have an equivalent remaining agent (none to all)? Where do rules stop being enough? |
-| Q3 | At what cost: tokens, time, unnecessary reassignments? |
-| Q0 | (Precondition) Is the problem meaningful: do systems lose much when an agent is lost? |
+| RQ1 | How does a baseline manager behave under environmental, preference and goal changes, and what are its main failure modes? |
+| RQ2 | Which training-free design factors reduce those failures, and for which change type? |
+| RQ3 | How do results depend on when the change arrives and how much of the remaining plan it affects? |
+| RQ4 | What does each improvement cost in model calls? |
 
-## The benchmark these experiments run on
+## Setting
 
-The benchmark is **grounded in real-world scenarios**, not in MA-Gym's existing workflows. MA-Gym supplies the manager action space and its three baseline
-managers (Random, CoT, Assign-All); the workflows, rosters and changes below are new. Every scenario must satisfy:
+- **Benchmark:** MA-Gym's existing benchmarks, improved with elements of other peer-reviewed benchmarks (REALM-Bench is the one the proposal names). What is wrong with MA-Gym's benchmarks is established first (`decisions.md` D28).
+- **Change types:** environmental (disruptions such as traffic, road closures, delays, from a borrowed benchmark or injected), preference (how options are ranked), goal (what counts as success). Preference and goal changes are injected at controlled points.
+- **Fixed:** the baseline manager once frozen (model, prompt, visible state, delegation); cheap model tiers.
+- **Out of scope:** agent unavailability, task and requirement drift beyond the goal change, joins and leaves, error recovery, comparison with other published methods.
 
-- **Grounded source.** A documented real deployment or workflow (public engineering write-ups, vendor reference architectures, open task benchmarks) supplies the task graph and
-  agent roles; public incident and release records (provider status pages, API deprecation and release notes, rate-limit documentation) supply the change processes. Each scenario records
-  its sources (URL, date, what was taken from it). Specialised agent roles are an **explicit assumption**, not a claim about industry practice.
-- **Fixed:** task goals and requirements, accurately declared agent capabilities (each description says what the agent can and cannot do), no preference drift, no joins.
-- **Change-event schema** (one schema for public records and developer logs): timestamp, agent, event type (outage, rate limit, permanent deprecation), duration, announced or not.
-- **Tasks are gated** with deterministic checklists (content present, produced by an eligible agent, dependencies met), scored at every step. Workers have a deterministic mode, so variance comes from the manager.
-- **Counterfactual pair:** the same task, workflow and seed run twice, with and without the change. Unaffected tasks are marked as controls; affected tasks are marked in advance, never derived from a run.
-- **Documented best action** for each affected task (continue, repair with a substitute, replan or drop), from the declared capabilities.
-- **Validity gates (E0).** Scripted managers only, no LLM spend: *do-nothing* scores low on affected tasks and high on the counterfactual; the *oracle* reaches the best achievable score and leaves unaffected tasks untouched;
-  a *null* manager (no-op only) scores about zero everywhere. A failing gate means the **scenario** is broken: fix or drop it, and list every failure and fix in the report.
+## Conditions
+
+| ID | Condition | Role |
+|---|---|---|
+| C0 | No change | Control: the manager's behaviour without a disruption |
+| C1 | Ignore the change | Lower reference |
+| C2 | Replan from scratch | Reference that wastes completed work |
+| C3 | Baseline manager (MA-Gym CoT) | The system whose failures are analysed |
+| C4.n | Baseline plus one targeted improvement (n = 1, 2, ...) | Tested alone first, then in combination |
+| REF | Re-solved remaining problem under the new objective | Reference answer, where an exact solver exists |
+
+Candidate improvements (the list is a candidate list, not a commitment): an explicit continue/repair/replan decision; identifying affected tasks from dependencies; tracking the active requirements. Each is added only in response to a failure mode that is frequent in C3.
 
 ## Factors
 
+One factor varied at a time from a default setting.
+
 | Factor | Levels |
 |---|---|
-| Substitute share (fraction of affected tasks with an equivalent remaining agent) | 0, 0.25, 0.5, 0.75, 1.0 (`SUBSTITUTE_SHARES`) |
-| Change type | outage, rate limit, permanent deprecation |
-| Duration and timing | sampled from the empirical distributions in the public records, plus a small fixed grid (early, mid-run) as a control |
-| What the manager is told | informed (upper bound) or unannounced signals only (timeouts, errors, degraded outputs) |
-| Workflow size and dependency depth | parameters, stratified (small, medium, large; shallow, deep), taken from documented use cases |
-| Horizon | a parameter; typical lengths grounded in documented use cases where possible |
+| Change type | environmental, preference, goal |
+| Timing | early, mid, late in the workflow |
+| Share of the remaining plan affected | to be set when the scenarios exist |
+| Explicitness | change stated explicitly, or only implied |
 
-## Systems under test
+## Method
 
-| ID | System | Notes |
-|---|---|---|
-| S0 | Do nothing (assigned upfront, never reacts) | The floor |
-| S1 | Rule-based router with ordered fallbacks; capability-based routing variant | Read the hidden labels and chains the LLM systems never see |
-| S2 | MA-Gym Random, CoT and Assign-All managers, unchanged | CoT and Assign-All are the "existing managers" |
-| S3 | Prompt-informed manager | A plain LLM manager told in its prompt what changed |
-| S4 | Policy manager | S3 plus an explicit continue/repair/replan rule based on which tasks depended on the lost agent. **Same model, prompt and observation otherwise**, so any difference is the policy |
-
-LLM systems get 5 seeds (`SEEDS`); S0 and S1 and the scripted managers are deterministic and run once. S4 does not exist yet; E4 waits for it.
-
-## Experiment types
-
-| ID | Experiment | Varies | Answers | Needs |
-|---|---|---|---|---|
-| E0 | Validity gates | none (scripted managers) | whether each scenario is fit to use | the benchmark only |
-| E1 | Does losing an agent hurt? | systems S0, S1, S2 on every scenario, informed | Q0 | E0 |
-| E2 | Substitute-share sweep | substitute share, at fixed change type and timing | Q2 | E0 |
-| E3 | Announcement ablation | informed vs unannounced | what happens when the manager must detect the change | E0 |
-| E4 | Prompt vs policy | S3 vs S4, matched | Q1 | the policy manager |
-| E5 | Change-process sweep | change type, duration, timing (sampled from records) | whether results depend on how the agent is lost | E0 |
-| E6 | Scale sweep | workflow size and dependency depth (and horizon) | whether results hold as dependencies accumulate | E0 |
-| E7 | Cost accounting | measured in every experiment | Q3 | none |
-
-E1 gates the others: if E1's verdict is **not meaningful**, stop and report that. Order of work: E0, E1, then E2 and E3, then E5 and E6, then E4 once the policy manager is built.
-The scenario count is (grounded cases) x (factor levels) and is fixed at the freeze, when the case list exists; this document does not state it because no cases exist yet.
+1. **Baseline:** define and freeze one manager.
+2. **Error analysis:** categorise C3's failures per change type; starting taxonomy: ignoring the update, restarting everything, losing track of completed work, replanning the wrong part. Extend it from the data, and list every category added after seeing results.
+3. **Improvements:** one targeted modification per frequent failure, tested alone, then in combination.
+4. **Held-out check:** develop on one scenario set, report final results on a separate set. The split is fixed before the first improvement is tried.
 
 ## Measures
 
-- **Post-change score:** mean checklist score of the affected tasks at the end of the run.
-- **Drop** of system *m* on a scenario: (mean post-change score on its counterfactual) minus (mean on the change run), over seeds.
-- **Recovery** of system *m*: `(P_m - P_S0) / (P_cf - P_S0)`, where `P` is the mean post-change score and `cf` the counterfactual. Reported per substitute share.
-- **Disruption cost:** share of unaffected, unfinished tasks needlessly reassigned, restarted or removed after the event.
-- **Cost:** tokens, wall time, LLM calls; **partial completion:** the per-step score curve.
-- **Failure taxonomy** (per run): assigned to an unavailable agent, stalled, needless restart, over-replanning, under-repair, dependency violation, premature termination.
-- A structured trace per run: change events, manager decisions, affected tasks, and why each task passed or failed.
+- **Outcome quality after the change**, against the re-solved reference where an exact solver exists.
+- **Unnecessary changes:** work the change does not affect that the manager nevertheless moved, restarted or removed (unaffected tasks as control).
+- **Cost:** model calls and tokens (wall time if cheap to record).
+- **Variability:** repeated runs per condition; report the spread, not only the mean.
+- A per-run trace: the change event, each manager decision, which tasks the change affected.
+
+## Open items (to fix before the "go")
+
+None of these has a value yet; the proposal does not give one. Do not invent them while building: ask.
+
+- The assumptions behind the chosen change types and timings, and the justification for each (`decisions.md` D28 Issue 2 and D29: justify and vary, not ground in records); the cited sources do not say when changes occur, so write the assumptions down before the first run.
+- How "outcome quality on affected tasks" is scored deterministically (`decisions.md` D28, Issue 1), and which tasks are marked affected and which serve as unaffected controls.
+- The list of MA-Gym benchmark flaws, and which are fixed, borrowed or accepted (`decisions.md` D28).
+- Which scenarios the study uses, which elements are borrowed from which peer-reviewed benchmark, and the development and held-out split.
+- Mapping of borrowed elements onto MA-Gym (`decisions.md` D22).
+- The outcome score for preference and goal changes where no exact solver exists.
+- Number of repeated runs per condition, and the manager and worker models.
+- What counts as a "frequent" failure (the cut-off for adding an improvement) and as a "helpful" improvement (the minimum gain, and the interval or test used).
+- Levels of the "share affected" factor and of timing (which steps are early, mid, late).
+- Whether the counterfactual pair (the same scenario with and without the change, `decisions.md` D21) is used.
 
 ## Thresholds (single source of truth)
 
-To be mirrored in the code's threshold module when it exists, with a test that fails if the two disagree. Change both and add an amendment.
+None yet. When set they live in one code module, mirrored here, with a test that fails if they disagree; changes after the freeze are dated amendments.
 
-| Constant | Value | Meaning |
-|---|---|---|
-| `MEANINGFUL_DROP_MIN` | 0.25 | A scenario "hurts" a system when its drop is at least this, with the CI above zero |
-| `NOT_MEANINGFUL_DROP_MAX` | 0.10 | Mean drop below this for both existing managers: not meaningful |
-| `SCENARIO_SHARE_MIN` | 0.70 | Share of change scenarios that must hurt, for each existing manager |
-| `FAILURE_MODE_SHARE_MIN` | 0.30 | One failure mode must account for at least this share of failures |
-| `RULES_SUFFICE_RECOVERY` | 0.90 | (proposed) Rules "suffice" at a substitute share when the best S1 variant scores at least this fraction of its counterfactual |
-| `POLICY_GAIN_MIN` | 0.10 | (proposed) S4 must beat S3 by at least this post-change score, with the CI above zero |
-| `MANAGER_GAIN_MIN` | 0.10 | (proposed) A manager "wins" over the best S1 variant by at least this post-change score, with the CI above zero |
-| `COST_RATIO_MAX` | 5 | (proposed) A win is "worth it" only if the manager's tokens are at most this multiple of the best S1 variant's (S1 uses none, so its cost is the scripted overhead; report the raw tokens too) |
-| `CI_LEVEL` | 0.95 | Bootstrap confidence level |
-| `BOOTSTRAP_RESAMPLES` | 10000 | Bootstrap draws |
-| `SEEDS` | 5 | Seeds per LLM system |
-| `SUBSTITUTE_SHARES` | 0, 0.25, 0.5, 0.75, 1.0 | Levels of the substitute-share factor |
+## Assumptions (to be frozen at the "go")
 
-Validity gates (not decision thresholds): do-nothing at most 0.55 on affected tasks in a change run and at least 0.95 on its counterfactual; oracle at least 0.95 of the achievable maximum with zero disruption;
-null at most 0.02 everywhere.
+- **A1 (timing):** a change can arrive at any point in the workflow, so timing is varied (early, mid, late). No timing is claimed to be the realistic one. (`decisions.md` D29)
+- Add one line per further assumption: change types, the share of the plan affected, explicit versus implied. Each states what is assumed and why it is reasonable, citing a source where there is one.
 
-## Decision rules
+## Claims the design supports
 
-Statistics: scenario-level paired comparison against the counterfactual; 95% percentile bootstrap, resampling seeds within a scenario and scenarios within a stratum. Every comparison below is pre-specified; all are reported, none dropped.
-
-1. **Q0, is the problem meaningful (E1).**
-   - **NOT MEANINGFUL** if the mean drop is below `NOT_MEANINGFUL_DROP_MAX` for both CoT and Assign-All. Checked first.
-   - **MEANINGFUL** if, for both, the share of change scenarios that hurt is at least `SCENARIO_SHARE_MIN`, and the top failure mode's share is at least `FAILURE_MODE_SHARE_MIN`.
-   - **INCONCLUSIVE** otherwise.
-2. **Q2, where do rules stop being enough (E2).** The crossover is the smallest substitute share at which the best S1 variant reaches `RULES_SUFFICE_RECOVERY`. Report: rules suffice at every share; rules suffice from share *s\** upward (a manager is only needed below *s\**); or rules never suffice.
-3. **Q1, prompt vs policy (E4).** S4 beats S3 if the gain is at least `POLICY_GAIN_MIN` with the CI above zero; report per substitute share. If it does not, the policy adds nothing over the prompt.
-4. **Manager vs rules.** A manager (S3 or S4) wins at a share if it beats the best S1 variant by `MANAGER_GAIN_MIN`; it is worth it if its token cost is within `COST_RATIO_MAX`. (Q3.)
-5. **Announcement (E3):** report each system's loss from informed to unannounced, and its detection delay in steps. No threshold: it measures how far the informed results are an upper bound.
-6. **Overall finding, one of:** rules suffice (state where); a manager wins (state where and at what cost); a policy is needed beyond the prompt (state where); or none, with the reasons.
-
-## Grounding protocol
-
-- Inclusion criteria for a source scenario are written before selection: a documented deployment with a stated task graph and agent roles, and incident or release records for at least one of its dependencies.
-- For each change process: record the source, extract type, start and duration as stated, mark whether the provider announced it, and never invent a record.
-- A scenario with an unverifiable source is excluded, and exclusions are listed. Specialised agents, declared capabilities and any invented parts (for example the substitute assignment) are listed as assumptions in the scenario's provenance.
+- Results hold across the timings (early, mid, late) and shares of the plan affected that were tried. They are **not** claimed to match when changes occur in real workflows (`decisions.md` D29).
 
 ## What would change my mind
 
-- If E1 passes only because of the scoring (for example a credit for dropping work), re-report E1 with that credit removed; if the verdict changes, it depends on my design and is reported so.
-- If a system's drop is explained by the horizon or by its own failures in the counterfactual, the counterfactual is the problem: check counterfactual scores before anything else (below 0.9 for a manager is reported first).
-- A failure mode that is a scoring artefact is named as one.
+- If the baseline already handles a change type well (small gap to the reference), report that and drop the improvement study for that type; it is a finding.
+- If a failure mode is a scoring artefact, name it as one.
+- If the no-change condition (C0) scores poorly, the scenario or the manager setup is the problem: fix it before reading any change result.
 
 ## Cost
 
-Fixed at the freeze, when the case list exists. Planning figures from an earlier prototype: a CoT prompt averaged about 6,200 tokens and CoT makes one call per step, so a run costs roughly (steps) x 6,200 prompt tokens plus output;
-Assign-All makes one call. Re-measure on the real scenarios (build the real prompts and count tokens without calling a model) and state calls and dollars before the "go".
+Fixed at the freeze, once the scenarios exist. Estimate by building the real prompts and counting tokens without calling a model; state calls and dollars before the "go". No run is made before then.
 
 ## Amendments
 
-- 2026-10-21, before any run: redesigned around the Project Proposal. Experiment types E0 to E7 replace the earlier fixed grid; the benchmark is grounded in real-world scenarios instead of MA-Gym's workflows; new thresholds marked (proposed).
+- 2026-11-03, before any run: setting changed to MA-Gym's benchmarks improved with peer-reviewed ones (was REALM-Bench alone), following the updated proposal.
+- 2026-11-03, before any run: rewritten for the empirical study (Project Proposal, problem definition 3). The agent-loss thresholds, grid and experiment types E0 to E7 are retired.

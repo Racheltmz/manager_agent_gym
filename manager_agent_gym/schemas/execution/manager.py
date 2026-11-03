@@ -3,7 +3,6 @@ Manager agent observation and action data models.
 """
 
 from datetime import datetime
-from typing import Literal
 from uuid import UUID
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -11,25 +10,6 @@ from ...schemas.core import Message
 from ...schemas.preferences.constraints import Constraint
 from ...schemas.workflow_agents.stakeholder import StakeholderPublicProfile
 from ...schemas.workflow_agents.config import AgentConfig
-
-
-class AvailabilityNotice(BaseModel):
-    """An outage or rate limit on one worker, as shown to the manager (specialist-loss benchmark).
-
-    Public information only: it names the worker and the effect, never a task or a substitute.
-    """
-
-    timestep: int = Field(..., description="Timestep at which the event took effect")
-    agent_id: str
-    kind: Literal["outage", "rate_limit"]
-    status: Literal["unavailable", "recovered"] = Field(
-        ..., description="unavailable: in effect now; recovered: the worker is available again"
-    )
-    reset_timestep: int | None = Field(
-        default=None,
-        description="Timestep at which the worker is available again; None if not before the run ends",
-    )
-    message: str = Field(default="", description="Human-readable statement of the effect")
 
 
 class RunningTaskInfo(BaseModel):
@@ -110,10 +90,6 @@ class ManagerObservation(BaseModel):
     running_task_info: list[RunningTaskInfo] = Field(
         default_factory=list,
         description="Running tasks with their worker and start timestep (empty unless team awareness is on)",
-    )
-    availability_notices: list[AvailabilityNotice] = Field(
-        default_factory=list,
-        description="Outages and rate limits so far, oldest first (empty outside the specialist-loss benchmark)",
     )
 
     stakeholder_profile: StakeholderPublicProfile = Field(

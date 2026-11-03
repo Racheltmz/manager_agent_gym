@@ -311,22 +311,6 @@ class ChainOfThoughtManagerAgent(ManagerAgent):
                 lines.append(f"- (+{extra} more running)")
             running_block = "\n### Running Tasks\n" + "\n".join(lines) + "\n"
 
-        # Outages and rate limits (specialist-loss benchmark only): empty list renders nothing
-        availability_block = ""
-        if observation.availability_notices:
-            lines = []
-            for n in sorted(observation.availability_notices, key=lambda n: n.timestep, reverse=True):
-                new = "[NEW] " if n.timestep == observation.timestep else ""
-                state = "UNAVAILABLE" if n.status == "unavailable" else "AVAILABLE AGAIN"
-                lines.append(f"- {new}t={n.timestep} {n.agent_id} {state} — {n.message}")
-            availability_block = (
-                "\n### Worker Availability (outages and rate limits so far, newest first)\n"
-                + "\n".join(lines)
-                + "\nAn assignment to an unavailable worker is rejected. Reassigning a RUNNING task to a different "
-                "agent cancels its current run and restarts it from scratch with the new agent; COMPLETED, FAILED "
-                "and composite tasks cannot be reassigned.\n"
-            )
-
         # Valid ID universes (helps the model avoid fabricating IDs)
         id_guidance_lines = [
             f"- all_task_ids (count={len(observation.task_ids)}): sample={[str(x) for x in observation.task_ids[:preview_n]]}",
@@ -387,7 +371,7 @@ class ChainOfThoughtManagerAgent(ManagerAgent):
 
 ### Manager Action History (recent)
 {actions_block}
-{running_block}{availability_block}
+{running_block}
 ### Stakeholder Profile (public)
 {stakeholder_block}
 """

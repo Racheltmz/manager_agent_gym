@@ -1,6 +1,6 @@
 """Read-only loaders over the run outputs directory (dashboard/outputs, or $MAG_OUTPUTS_DIR).
 
-Reads existing summary.json / team_change_metrics.json / final_metrics.json only. No
+Reads existing summary.json / final_metrics.json only. No
 simulation, no LLM call.
 """
 
@@ -202,32 +202,6 @@ def nonstationarity_by_mode(
     return rows
 
 
-def list_team_change_metrics() -> list[dict[str, Any]]:
-    """One row per run with a team_change_metrics.json (dashboard/analysis/analyze_team_changes.py)."""
-    rows = []
-    for path in sorted(OUT_ROOT.glob("*/*/run_seed_*/team_change_metrics.json")):
-        data = _read_json(path)
-        if data is None:
-            continue
-        rows.append(
-            {
-                "workflow": data.get("workflow"),
-                "manager_mode": data.get("manager_mode"),
-                "run": path.parent.name,
-                **{
-                    k: data.get(k)
-                    for k in ("post_change_score", "baseline_score", "post_change_gap", "disruption_cost")
-                },
-                # post-change score per case, one column each
-                **{
-                    case: (data.get("by_case") or {}).get(case, {}).get("post_change_score")
-                    for case in ("specialist", "running_task", "leave")
-                },
-            }
-        )
-    return rows
-
-
 def checklist_dag(workflow_folder: str, manager_mode: str, run: str) -> dict[str, Any] | None:
     """Deterministic checklist score per task per timestep for one run, as a DAG.
 
@@ -253,8 +227,7 @@ def checklist_dag(workflow_folder: str, manager_mode: str, run: str) -> dict[str
 
     def subtree_text(x: dict, resources: dict) -> str:
         """Output text of a task and all its subtasks. A checklist is run on this, so a task the
-        manager decomposed is scored on its subtasks' combined output, as if it had stayed whole
-        (same rule as team_change_metrics)."""
+        manager decomposed is scored on its subtasks' combined output, as if it had stayed whole."""
         return "\n".join(
             c
             for y in flat(x)

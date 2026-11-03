@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from abc import ABC, abstractmethod
 
 from ...schemas.execution import ManagerObservation
-from ...schemas.execution.manager import AvailabilityNotice, RunningTaskInfo
+from ...schemas.execution.manager import RunningTaskInfo
 from ...schemas.execution.manager_actions import BaseManagerAction, ActionResult
 from ...schemas.preferences.preference import PreferenceWeights
 from ...schemas.core.base import TaskStatus
@@ -63,8 +63,6 @@ class ManagerAgent(ABC):
         # Prompts of the last decision ({"model", "system_prompt", "user_prompt"}); the engine
         # clears it before each step and writes it, with the action, to the manager context log.
         self.last_trace: dict[str, str] | None = None
-        # Specialist-loss benchmark: outages and rate limits so far, set by the engine each step.
-        self._availability_notices: list[AvailabilityNotice] = []
 
     def configure_seed(self, seed: int) -> None:
         """Configure deterministic seed for this manager (overridable)."""
@@ -89,9 +87,6 @@ class ManagerAgent(ABC):
 
     def set_team_awareness(self, enabled: bool) -> None:
         self.team_awareness = bool(enabled)
-
-    def set_availability_notices(self, notices: list[AvailabilityNotice]) -> None:
-        self._availability_notices = list(notices)
 
     async def create_observation(
         self,
@@ -186,7 +181,6 @@ class ManagerAgent(ABC):
             task_ids=list(workflow.tasks.keys()),
             resource_ids=list(workflow.resources.keys()),
             agent_ids=list(workflow.agents.keys()),
-            availability_notices=list(self._availability_notices),
             stakeholder_profile=stakeholder_profile,
         )
 

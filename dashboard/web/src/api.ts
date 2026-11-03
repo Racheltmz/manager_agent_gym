@@ -41,19 +41,6 @@ export type JoinRow = {
   capabilities_visible_at_join: boolean | null;
 };
 
-export type TeamChangeRow = {
-  workflow: string;
-  manager_mode: string;
-  run: string;
-  post_change_score: number | null;
-  baseline_score: number | null;
-  post_change_gap: number | null;
-  disruption_cost: number | null;
-  specialist: number | null;
-  running_task: number | null;
-  leave: number | null;
-};
-
 export type ChecklistDag = {
   timesteps: number[];
   nodes: {
@@ -121,7 +108,6 @@ export const api = {
     get<NonStationarityRow[]>("nonstationarity", { workflow, mid_episode_only: midEpisodeOnly }),
   joins: (workflow: string, midEpisodeOnly: boolean) =>
     get<JoinRow[]>("joins", { workflow, mid_episode_only: midEpisodeOnly }),
-  teamChange: () => get<TeamChangeRow[]>("team-change"),
   checklistDag: (workflowFolder: string, managerMode: string, run: string) =>
     get<ChecklistDag>("checklist-dag", { workflow_folder: workflowFolder, manager_mode: managerMode, run }),
   checklistTask: (workflowFolder: string, managerMode: string, run: string, task: string, timestep: number) =>
